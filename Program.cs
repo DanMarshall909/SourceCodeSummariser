@@ -221,8 +221,12 @@ namespace SourceCodeSummarizer
 
             if (existingSummary != null)
             {
-                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' is already summarized.");
+                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' is already summarized. Using existing summary.");
                 return existingSummary.Summary;
+            }
+            else
+            {
+                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' has changed. Updating summary.");
             }
 
             string methodDescription = await GetMethodDescription(methodDecl);
