@@ -54,7 +54,8 @@ namespace SourceCodeSummarizer
                 summaries.Add(summary);
 
                 // Save individual file summary to disk
-                string summaryFileName = Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(file) + "_summary.txt");
+                string summaryFileName =
+                    Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(file) + "_summary.txt");
                 await File.WriteAllTextAsync(summaryFileName, summary);
             }
 
@@ -77,7 +78,8 @@ namespace SourceCodeSummarizer
             var memberSummaries = new List<string>();
 
             // Load existing summary if it exists
-            string existingSummaryFilePath = Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(filePath) + "_summary.txt");
+            string existingSummaryFilePath =
+                Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(filePath) + "_summary.txt");
             if (File.Exists(existingSummaryFilePath))
             {
                 memberSummaries.Add($"Existing summary found for {fileName}:");
@@ -134,6 +136,7 @@ namespace SourceCodeSummarizer
                     {
                         summaries.Add($"Field: {variable.Identifier.Text} ({fieldDecl.Declaration.Type})");
                     }
+
                     break;
 
                 case InterfaceDeclarationSyntax interfaceDecl:
@@ -156,17 +159,19 @@ namespace SourceCodeSummarizer
         static async Task<string> GetMethodDescription(MethodDeclarationSyntax methodDecl)
         {
             string methodCode = methodDecl.ToString();
-            string prompt = $"Summarize the following C# method optimising for the smallest number of tokens possible and clarity.:\n\n{methodCode}\n\nSummary:";
+            string prompt = $"Summarize the following C# method optimizing for the smallest number of tokens possible and clarity.:\n\n{methodCode}\n\nSummary:";
+
+            int tokenLimit = 50; // Increase this for more detailed summaries where needed
 
             var requestBody = new
             {
-                model = "gpt-4",
+                model = "gpt-3.5-turbo", // or "gpt-4" if you need higher quality
                 messages = new[]
                 {
                     new { role = "system", content = "You are a code summarizer. The less tokens you can use the better, but accuracy is far more important than brevity." },
                     new { role = "user", content = prompt }
                 },
-                max_tokens = 20
+                max_tokens = tokenLimit
             };
 
             string jsonRequestBody = System.Text.Json.JsonSerializer.Serialize(requestBody);
@@ -177,14 +182,20 @@ namespace SourceCodeSummarizer
 
             string responseContent = await response.Content.ReadAsStringAsync();
             var result = System.Text.Json.JsonDocument.Parse(responseContent);
+            string summary = result.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString()
+                .Trim();
 
-            return result.RootElement
-                         .GetProperty("choices")[0]
-                         .GetProperty("message")
-                         .GetProperty("content")
-                         .GetString()
-                         .Trim();
+            // Post-process the summary to ensure it is complete
+            summary = summary.TrimEnd(new char[] { ',', ' ', '.' }) + ".";
+
+            return summary;
         }
+
+
 
         static List<string> ChunkSummaries(List<string> summaries, int tokenLimit)
         {
@@ -222,6 +233,7 @@ namespace SourceCodeSummarizer
             {
                 results.AddRange(await selector(item));
             }
+
             return results;
         }
     }
