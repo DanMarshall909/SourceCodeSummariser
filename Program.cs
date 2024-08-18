@@ -1,5 +1,5 @@
 ﻿using System.Text;
-using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -7,12 +7,38 @@ using System.Net.Http.Headers;
 
 namespace SourceCodeSummarizer
 {
+    public class SummaryContext : DbContext
+    {
+        public DbSet<FileEntity> Files { get; set; }
+        public DbSet<MemberEntity> Members { get; set; }
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.UseSqlite("Data Source=summaries.db");
+        }
+    }
+
+    public class FileEntity
+    {
+        public int Id { get; set; }
+        public string FileName { get; set; }
+        public List<MemberEntity> Members { get; set; } = new List<MemberEntity>();
+    }
+
+    public class MemberEntity
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public string Type { get; set; }
+        public string Summary { get; set; }
+        public FileEntity File { get; set; }
+        public int FileEntityId { get; set; }
+    }
+
     class Program
     {
         private static readonly HttpClient client = new HttpClient();
         private static string apiKey;
-        private static readonly string outputDirectory = "SummariesOutput";
-        private static readonly string outputFileName = "summaries.json";
 
         static Program()
         {
@@ -26,8 +52,8 @@ namespace SourceCodeSummarizer
 
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
-            // Ensure the output directory exists
-            Directory.CreateDirectory(outputDirectory);
+            using var dbContext = new SummaryContext();
+            dbContext.Database.EnsureCreated();
         }
 
         static async Task Main(string[] args)
@@ -46,26 +72,36 @@ namespace SourceCodeSummarizer
                 return;
             }
 
-            var summaries = new List<FileSummary>();
+            using var dbContext = new SummaryContext();
 
             // Traverse the directory and process each file
             foreach (var file in Directory.EnumerateFiles(folderPath, "*.cs", SearchOption.AllDirectories))
             {
                 Console.WriteLine($"Processing file: {file}");
-                var summary = await ProcessFile(file);
-                summaries.Add(summary);
+                await ProcessFile(file, dbContext);
             }
 
-            // Write the summaries to a single JSON file
-            await WriteSummariesToJson(summaries);
+            Console.WriteLine("Processing completed. Summaries saved to the database.");
         }
 
-        static async Task<FileSummary> ProcessFile(string filePath)
+        static async Task ProcessFile(string filePath, SummaryContext dbContext)
         {
             string content = await File.ReadAllTextAsync(filePath);
-            var summary = await GenerateFileSummary(filePath, content);
+            var fileSummary = await GenerateFileSummary(filePath, content);
 
-            return summary;
+            var fileEntity = new FileEntity
+            {
+                FileName = fileSummary.FileName,
+                Members = fileSummary.Members.Select(m => new MemberEntity
+                {
+                    Name = m.Split(':')[1].Trim(),
+                    Type = m.Split(':')[0].Trim(),
+                    Summary = m,
+                }).ToList()
+            };
+
+            dbContext.Files.Add(fileEntity);
+            await dbContext.SaveChangesAsync();
         }
 
         static async Task<FileSummary> GenerateFileSummary(string filePath, string content)
@@ -108,12 +144,12 @@ namespace SourceCodeSummarizer
             {
                 case NamespaceDeclarationSyntax namespaceDecl:
                     summaries.Add($"Namespace: {namespaceDecl.Name}");
-                    summaries.AddRange(await namespaceDecl.Members.SelectManyAsync(SummarizeMember));
+                    summaries.AddRange((await Task.WhenAll(namespaceDecl.Members.Select(SummarizeMember))).SelectMany(s => s));
                     break;
 
                 case ClassDeclarationSyntax classDecl:
                     summaries.Add($"Class: {classDecl.Identifier.Text}");
-                    summaries.AddRange(await SummarizeClassMembers(classDecl));
+                    summaries.AddRange((await Task.WhenAll(classDecl.Members.Select(SummarizeMember))).SelectMany(s => s));
                     break;
 
                 case MethodDeclarationSyntax methodDecl:
@@ -130,12 +166,12 @@ namespace SourceCodeSummarizer
 
                 case InterfaceDeclarationSyntax interfaceDecl:
                     summaries.Add($"Interface: {interfaceDecl.Identifier.Text}");
-                    summaries.AddRange(await SummarizeInterfaceMembers(interfaceDecl));
+                    summaries.AddRange((await Task.WhenAll(interfaceDecl.Members.Select(SummarizeMember))).SelectMany(s => s));
                     break;
 
                 case StructDeclarationSyntax structDecl:
                     summaries.Add($"Struct: {structDecl.Identifier.Text}");
-                    summaries.AddRange(await SummarizeStructMembers(structDecl));
+                    summaries.AddRange((await Task.WhenAll(structDecl.Members.Select(SummarizeMember))).SelectMany(s => s));
                     break;
 
                 default:
@@ -144,11 +180,6 @@ namespace SourceCodeSummarizer
             }
 
             return summaries;
-        }
-
-        static async Task<IEnumerable<string>> SummarizeClassMembers(ClassDeclarationSyntax classDecl)
-        {
-            return await classDecl.Members.SelectManyAsync(SummarizeMember);
         }
 
         static async Task<string> SummarizeMethod(MethodDeclarationSyntax methodDecl)
@@ -160,16 +191,6 @@ namespace SourceCodeSummarizer
         static IEnumerable<string> SummarizeFields(FieldDeclarationSyntax fieldDecl)
         {
             return fieldDecl.Declaration.Variables.Select(variable => $"Field: {variable.Identifier.Text} ({fieldDecl.Declaration.Type})");
-        }
-
-        static async Task<IEnumerable<string>> SummarizeInterfaceMembers(InterfaceDeclarationSyntax interfaceDecl)
-        {
-            return await interfaceDecl.Members.SelectManyAsync(SummarizeMember);
-        }
-
-        static async Task<IEnumerable<string>> SummarizeStructMembers(StructDeclarationSyntax structDecl)
-        {
-            return await structDecl.Members.SelectManyAsync(SummarizeMember);
         }
 
         static async Task<string> GetMethodDescription(MethodDeclarationSyntax methodDecl)
@@ -222,35 +243,11 @@ namespace SourceCodeSummarizer
 
             return summary;
         }
-
-        static async Task WriteSummariesToJson(List<FileSummary> summaries)
-        {
-            string json = JsonSerializer.Serialize(summaries, new JsonSerializerOptions { WriteIndented = true });
-            string outputPath = Path.Combine(outputDirectory, outputFileName);
-            await File.WriteAllTextAsync(outputPath, json);
-            Console.WriteLine($"Summaries written to {outputFileName}");
-        }
     }
 
     public class FileSummary
     {
         public string FileName { get; set; }
         public List<string> Members { get; set; }
-    }
-
-    public static class EnumerableExtensions
-    {
-        public static async Task<IEnumerable<TResult>> SelectManyAsync<TSource, TResult>(
-            this IEnumerable<TSource> source,
-            Func<TSource, Task<IEnumerable<TResult>>> selector)
-        {
-            var results = new List<TResult>();
-            foreach (var item in source)
-            {
-                results.AddRange(await selector(item));
-            }
-
-            return results;
-        }
     }
 }
