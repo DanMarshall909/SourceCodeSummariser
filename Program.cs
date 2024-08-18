@@ -1,9 +1,11 @@
 ﻿using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 
 namespace SourceCodeSummarizer
 {
@@ -38,6 +40,7 @@ namespace SourceCodeSummarizer
         public string Name { get; set; } = null!;
         public string Type { get; set; } = null!;
         public string Summary { get; set; } = null!;
+        public string Hash { get; set; } = null!; // Added hash property
         public FileEntity File { get; set; } = null!;
         public int FileEntityId { get; set; }
     }
@@ -106,7 +109,7 @@ namespace SourceCodeSummarizer
         static async Task ProcessFile(string filePath, SummaryContext dbContext)
         {
             string content = await File.ReadAllTextAsync(filePath);
-            var fileSummary = await GenerateFileSummary(filePath, content);
+            var fileSummary = await GenerateFileSummary(filePath, content, dbContext);
 
             var fileEntity = new FileEntity
             {
@@ -116,6 +119,7 @@ namespace SourceCodeSummarizer
                     Name = m.Split(':')[1].Trim(),
                     Type = m.Split(':')[0].Trim(),
                     Summary = m,
+                    Hash = ComputeHash(m) // Store hash of the member summary
                 }).ToList()
             };
 
@@ -123,7 +127,7 @@ namespace SourceCodeSummarizer
             await dbContext.SaveChangesAsync();
         }
 
-        static async Task<FileSummary> GenerateFileSummary(string filePath, string content)
+        static async Task<FileSummary> GenerateFileSummary(string filePath, string content, SummaryContext dbContext)
         {
             string fileName = Path.GetFileName(filePath);
             var memberSummaries = new List<string>();
@@ -140,7 +144,7 @@ namespace SourceCodeSummarizer
                 Console.WriteLine($"Parsing members in {fileName}...");
                 foreach (var member in root.Members)
                 {
-                    var memberSummary = await SummarizeMember(member);
+                    var memberSummary = await SummarizeMember(member, dbContext);
                     if (memberSummary.Any())
                     {
                         memberSummaries.AddRange(memberSummary);
@@ -155,24 +159,33 @@ namespace SourceCodeSummarizer
             };
         }
 
-        static async Task<IEnumerable<string>> SummarizeMember(MemberDeclarationSyntax member)
+        static async Task<IEnumerable<string>> SummarizeMember(MemberDeclarationSyntax member, SummaryContext dbContext)
         {
             var summaries = new List<string>();
+            string memberHash = ComputeHash(member.ToString());
+
+            var existingMember = dbContext.Members.FirstOrDefault(m => m.Hash == memberHash);
+            if (existingMember != null)
+            {
+                Console.WriteLine($"Member '{member}' is already summarized.");
+                summaries.Add(existingMember.Summary);
+                return summaries;
+            }
 
             switch (member)
             {
                 case NamespaceDeclarationSyntax namespaceDecl:
                     summaries.Add($"Namespace: {namespaceDecl.Name}");
-                    summaries.AddRange((await Task.WhenAll(namespaceDecl.Members.Select(SummarizeMember))).SelectMany(s => s));
+                    summaries.AddRange((await Task.WhenAll(namespaceDecl.Members.Select(m => SummarizeMember(m, dbContext)))).SelectMany(s => s));
                     break;
 
                 case ClassDeclarationSyntax classDecl:
                     summaries.Add($"Class: {classDecl.Identifier.Text}");
-                    summaries.AddRange((await Task.WhenAll(classDecl.Members.Select(SummarizeMember))).SelectMany(s => s));
+                    summaries.AddRange((await Task.WhenAll(classDecl.Members.Select(m => SummarizeMember(m, dbContext)))).SelectMany(s => s));
                     break;
 
                 case MethodDeclarationSyntax methodDecl:
-                    summaries.Add(await SummarizeMethod(methodDecl));
+                    summaries.Add(await SummarizeMethod(methodDecl, dbContext));
                     break;
 
                 case PropertyDeclarationSyntax propertyDecl:
@@ -185,12 +198,12 @@ namespace SourceCodeSummarizer
 
                 case InterfaceDeclarationSyntax interfaceDecl:
                     summaries.Add($"Interface: {interfaceDecl.Identifier.Text}");
-                    summaries.AddRange((await Task.WhenAll(interfaceDecl.Members.Select(SummarizeMember))).SelectMany(s => s));
+                    summaries.AddRange((await Task.WhenAll(interfaceDecl.Members.Select(m => SummarizeMember(m, dbContext)))).SelectMany(s => s));
                     break;
 
                 case StructDeclarationSyntax structDecl:
                     summaries.Add($"Struct: {structDecl.Identifier.Text}");
-                    summaries.AddRange((await Task.WhenAll(structDecl.Members.Select(SummarizeMember))).SelectMany(s => s));
+                    summaries.AddRange((await Task.WhenAll(structDecl.Members.Select(m => SummarizeMember(m, dbContext)))).SelectMany(s => s));
                     break;
 
                 default:
@@ -201,8 +214,17 @@ namespace SourceCodeSummarizer
             return summaries;
         }
 
-        static async Task<string> SummarizeMethod(MethodDeclarationSyntax methodDecl)
+        static async Task<string> SummarizeMethod(MethodDeclarationSyntax methodDecl, SummaryContext dbContext)
         {
+            string methodHash = ComputeHash(methodDecl.ToString());
+            var existingSummary = dbContext.Members.FirstOrDefault(m => m.Hash == methodHash);
+
+            if (existingSummary != null)
+            {
+                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' is already summarized.");
+                return existingSummary.Summary;
+            }
+
             string methodDescription = await GetMethodDescription(methodDecl);
             return $"Method: {methodDecl.Identifier.Text} - {methodDescription}";
         }
@@ -261,6 +283,13 @@ namespace SourceCodeSummarizer
             summary += ".";
 
             return summary;
+        }
+
+        static string ComputeHash(string input)
+        {
+            using var sha256 = SHA256.Create();
+            byte[] bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(input));
+            return BitConverter.ToString(bytes).Replace("-", "").ToLower();
         }
     }
 
