@@ -18,13 +18,6 @@ namespace SourceCodeSummarizer
         {
             optionsBuilder.UseSqlite("Data Source=summaries.db");
         }
-
-        public void TruncateTables()
-        {
-            Files.RemoveRange(Files);
-            Members.RemoveRange(Members);
-            SaveChanges();
-        }
     }
 
     public class FileEntity
@@ -59,7 +52,6 @@ namespace SourceCodeSummarizer
 
             using var dbContext = new SummaryContext();
             dbContext.Database.EnsureCreated();
-            dbContext.TruncateTables(); // Truncate the database on restart
         }
 
         static async Task Main(string[] args)
@@ -80,6 +72,9 @@ namespace SourceCodeSummarizer
 
             using var dbContext = new SummaryContext();
 
+            var changedFiles = new List<string>();
+            var unchangedFiles = new List<string>();
+
             // Traverse the directory and process each file
             foreach (var file in Directory.EnumerateFiles(folderPath, "*.cs", SearchOption.AllDirectories))
             {
@@ -89,11 +84,36 @@ namespace SourceCodeSummarizer
                     continue;
                 }
 
-                Console.WriteLine($"Processing file: {file}");
-                await ProcessFile(file, dbContext);
+                bool isChanged = await ProcessFile(file, dbContext);
+
+                if (isChanged)
+                {
+                    changedFiles.Add(file);
+                }
+                else
+                {
+                    unchangedFiles.Add(file);
+                }
             }
 
-            Console.WriteLine("Processing completed. Summaries saved to the database.");
+            // Display summary of processing
+            Console.WriteLine("\n🔄 Changed Files:");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            foreach (var file in changedFiles)
+            {
+                Console.WriteLine($"  - {file}");
+            }
+            Console.ResetColor();
+
+            Console.WriteLine("\n✅ Unchanged Files:");
+            Console.ForegroundColor = ConsoleColor.Green;
+            foreach (var file in unchangedFiles)
+            {
+                Console.WriteLine($"  - {file}");
+            }
+            Console.ResetColor();
+
+            Console.WriteLine("\nProcessing completed. Summaries saved to the database.");
         }
 
         static bool IsInExcludedFolder(string filePath, string rootPath)
@@ -106,25 +126,44 @@ namespace SourceCodeSummarizer
                    normalizedPath.Contains(Path.Combine(normalizedRootPath, "obj").ToLower());
         }
 
-        static async Task ProcessFile(string filePath, SummaryContext dbContext)
+        static async Task<bool> ProcessFile(string filePath, SummaryContext dbContext)
         {
             string content = await File.ReadAllTextAsync(filePath);
             var fileSummary = await GenerateFileSummary(filePath, content, dbContext);
 
-            var fileEntity = new FileEntity
-            {
-                FileName = fileSummary.FileName,
-                Members = fileSummary.Members.Select(m => new MemberEntity
-                {
-                    Name = m.Split(':')[1].Trim(),
-                    Type = m.Split(':')[0].Trim(),
-                    Summary = m,
-                    Hash = ComputeHash(m) // Store hash of the member summary
-                }).ToList()
-            };
+            bool hasChanges = false;
 
-            dbContext.Files.Add(fileEntity);
+            var fileEntity = dbContext.Files.Include(f => f.Members).FirstOrDefault(f => f.FileName == fileSummary.FileName);
+            if (fileEntity == null)
+            {
+                fileEntity = new FileEntity { FileName = fileSummary.FileName };
+                dbContext.Files.Add(fileEntity);
+                hasChanges = true;
+            }
+
+            foreach (var memberSummary in fileSummary.Members)
+            {
+                string memberHash = ComputeHash(memberSummary);
+                var existingMember = dbContext.Members.FirstOrDefault(m => m.Hash == memberHash && m.FileEntityId == fileEntity.Id);
+
+                if (existingMember == null)
+                {
+                    var newMember = new MemberEntity
+                    {
+                        Name = memberSummary.Split(':')[1].Trim(),
+                        Type = memberSummary.Split(':')[0].Trim(),
+                        Summary = memberSummary,
+                        Hash = memberHash,
+                        File = fileEntity
+                    };
+                    dbContext.Members.Add(newMember);
+                    hasChanges = true;
+                }
+            }
+
             await dbContext.SaveChangesAsync();
+
+            return hasChanges;
         }
 
         static async Task<FileSummary> GenerateFileSummary(string filePath, string content, SummaryContext dbContext)
@@ -167,7 +206,9 @@ namespace SourceCodeSummarizer
             var existingMember = dbContext.Members.FirstOrDefault(m => m.Hash == memberHash);
             if (existingMember != null)
             {
-                Console.WriteLine($"Member '{member}' is already summarized.");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"Member '{member}' is already summarized. ✅");
+                Console.ResetColor();
                 summaries.Add(existingMember.Summary);
                 return summaries;
             }
@@ -221,12 +262,16 @@ namespace SourceCodeSummarizer
 
             if (existingSummary != null)
             {
-                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' is already summarized. Using existing summary.");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' is already summarized. ✅ Using existing summary.");
+                Console.ResetColor();
                 return existingSummary.Summary;
             }
             else
             {
-                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' has changed. Updating summary.");
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' has changed. 🔄 Updating summary.");
+                Console.ResetColor();
             }
 
             string methodDescription = await GetMethodDescription(methodDecl);
