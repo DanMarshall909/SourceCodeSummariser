@@ -9,51 +9,54 @@ namespace SourceCodeSummarizer
 {
     public class SummaryContext : DbContext
     {
-        public DbSet<FileEntity> Files { get; set; }
-        public DbSet<MemberEntity> Members { get; set; }
+        public DbSet<FileEntity> Files { get; set; } = null!;
+        public DbSet<MemberEntity> Members { get; set; } = null!;
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             optionsBuilder.UseSqlite("Data Source=summaries.db");
+        }
+
+        public void TruncateTables()
+        {
+            Files.RemoveRange(Files);
+            Members.RemoveRange(Members);
+            SaveChanges();
         }
     }
 
     public class FileEntity
     {
         public int Id { get; set; }
-        public string FileName { get; set; }
+        public string FileName { get; set; } = null!;
         public List<MemberEntity> Members { get; set; } = new List<MemberEntity>();
     }
 
     public class MemberEntity
     {
         public int Id { get; set; }
-        public string Name { get; set; }
-        public string Type { get; set; }
-        public string Summary { get; set; }
-        public FileEntity File { get; set; }
+        public string Name { get; set; } = null!;
+        public string Type { get; set; } = null!;
+        public string Summary { get; set; } = null!;
+        public FileEntity File { get; set; } = null!;
         public int FileEntityId { get; set; }
     }
 
     class Program
     {
         private static readonly HttpClient client = new HttpClient();
-        private static string apiKey;
+        private static string apiKey = null!;
 
         static Program()
         {
             // Retrieve the API key from the environment variable
-            apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY_TestChat");
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                Console.WriteLine("API key not found in environment variables.");
-                Environment.Exit(1); // Exit the program if the API key is missing
-            }
-
+            apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY_TestChat") ?? throw new InvalidOperationException("API key not found in environment variables.");
+            
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
             using var dbContext = new SummaryContext();
             dbContext.Database.EnsureCreated();
+            dbContext.TruncateTables(); // Truncate the database on restart
         }
 
         static async Task Main(string[] args)
@@ -77,11 +80,27 @@ namespace SourceCodeSummarizer
             // Traverse the directory and process each file
             foreach (var file in Directory.EnumerateFiles(folderPath, "*.cs", SearchOption.AllDirectories))
             {
+                if (IsInExcludedFolder(file, folderPath))
+                {
+                    Console.WriteLine($"Skipping file in excluded folder: {file}");
+                    continue;
+                }
+
                 Console.WriteLine($"Processing file: {file}");
                 await ProcessFile(file, dbContext);
             }
 
             Console.WriteLine("Processing completed. Summaries saved to the database.");
+        }
+
+        static bool IsInExcludedFolder(string filePath, string rootPath)
+        {
+            // Normalize paths for consistent comparison
+            string normalizedPath = Path.GetFullPath(filePath).ToLower();
+            string normalizedRootPath = Path.GetFullPath(rootPath).ToLower();
+
+            return normalizedPath.Contains(Path.Combine(normalizedRootPath, "bin").ToLower()) ||
+                   normalizedPath.Contains(Path.Combine(normalizedRootPath, "obj").ToLower());
         }
 
         static async Task ProcessFile(string filePath, SummaryContext dbContext)
@@ -247,7 +266,7 @@ namespace SourceCodeSummarizer
 
     public class FileSummary
     {
-        public string FileName { get; set; }
-        public List<string> Members { get; set; }
+        public string FileName { get; set; } = null!;
+        public List<string> Members { get; set; } = new List<string>();
     }
 }
