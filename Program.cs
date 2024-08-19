@@ -44,7 +44,6 @@ namespace SourceCodeSummarizer
 
         static Program()
         {
-            // Retrieve the API key from the environment variable
             apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY_TestChat") ??
                      throw new InvalidOperationException("API key not found in environment variables.");
 
@@ -71,9 +70,7 @@ namespace SourceCodeSummarizer
             }
 
             using var dbContext = new SummaryContext();
-
-            var changedFiles = new List<string>();
-            var unchangedFiles = new List<string>();
+            var changedFiles = new Dictionary<string, List<(string MethodSignature, string OldSummary, string NewSummary)>>();
 
             // Traverse the directory and process each file
             foreach (var file in Directory.EnumerateFiles(folderPath, "*.cs", SearchOption.AllDirectories))
@@ -84,36 +81,24 @@ namespace SourceCodeSummarizer
                     continue;
                 }
 
-                bool isChanged = await ProcessFile(file, dbContext);
-
-                if (isChanged)
+                var changes = await ProcessFile(file, dbContext);
+                if (changes.Any())
                 {
-                    changedFiles.Add(file);
-                }
-                else
-                {
-                    unchangedFiles.Add(file);
+                    changedFiles[file] = changes;
                 }
             }
 
-            // Display summary of processing
-            Console.WriteLine("\nChanged Files:");
-            Console.ForegroundColor = ConsoleColor.Green;
-            foreach (var file in changedFiles)
+            // Display changed methods grouped by file
+            foreach (var (file, changes) in changedFiles)
             {
-                Console.WriteLine($"  - {file}");
+                Console.WriteLine($"\nFile: {file}");
+                foreach (var (methodSignature, oldSummary, newSummary) in changes)
+                {
+                    Console.WriteLine($"\n### Method: {methodSignature}");
+                    Console.WriteLine($"Old Summary: {oldSummary}");
+                    Console.WriteLine($"New Summary: {newSummary}");
+                }
             }
-
-            Console.ResetColor();
-
-            Console.WriteLine("Unchanged Files:");
-            Console.ForegroundColor = ConsoleColor.Green;
-            foreach (var file in unchangedFiles)
-            {
-                Console.WriteLine($"  - {file}");
-            }
-
-            Console.ResetColor();
 
             Console.WriteLine("\nProcessing completed. Summaries saved to the database.");
         }
@@ -128,12 +113,12 @@ namespace SourceCodeSummarizer
                    normalizedPath.Contains(Path.Combine(normalizedRootPath, "obj").ToLower());
         }
 
-        static async Task<bool> ProcessFile(string filePath, SummaryContext dbContext)
+        static async Task<List<(string MethodSignature, string OldSummary, string NewSummary)>> ProcessFile(string filePath, SummaryContext dbContext)
         {
             string content = await File.ReadAllTextAsync(filePath);
             var fileSummary = await GenerateFileSummary(filePath, content, dbContext);
 
-            bool hasChanges = false;
+            var changes = new List<(string MethodSignature, string OldSummary, string NewSummary)>();
 
             var fileEntity = dbContext.Files.Include(f => f.Members)
                 .FirstOrDefault(f => f.FileName == fileSummary.FileName);
@@ -141,50 +126,42 @@ namespace SourceCodeSummarizer
             {
                 fileEntity = new FileEntity { FileName = fileSummary.FileName };
                 dbContext.Files.Add(fileEntity);
-                hasChanges = true;
+                await dbContext.SaveChangesAsync();
             }
 
             foreach (var memberSummary in fileSummary.Members)
             {
                 string memberHash = ComputeHash(memberSummary);
-                var existingMember =
-                    dbContext.Members.FirstOrDefault(m => m.Hash == memberHash && m.FileEntityId == fileEntity.Id);
+                var existingMember = dbContext.Members
+                    .FirstOrDefault(m => m.Hash == memberHash && m.FileEntityId == fileEntity.Id);
+
+                string methodSignature = memberSummary.Split('-')[0].Trim();
+                string newSummary = memberSummary;
 
                 if (existingMember == null)
                 {
-                    var parts = memberSummary.Split(':');
-                    if (parts.Length < 2)
-                    {
-                        Console.WriteLine($"Invalid member summary format: {memberSummary}");
-                        continue; // Skip this member if the format is invalid
-                    }
-
                     var newMember = new MemberEntity
                     {
-                        Name = parts[1].Trim(),
-                        Type = parts[0].Trim(),
+                        Name = memberSummary.Split(':')[1].Trim(),
+                        Type = memberSummary.Split(':')[0].Trim(),
                         Summary = memberSummary,
                         Hash = memberHash,
                         File = fileEntity
                     };
                     dbContext.Members.Add(newMember);
-                    hasChanges = true;
-
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"Member '{newMember.Name}' has changed. Updating summary.");
-                    Console.ResetColor();
+                    await dbContext.SaveChangesAsync();
+                    changes.Add((methodSignature, string.Empty, newSummary));
                 }
-                else
+                else if (existingMember.Summary != newSummary)
                 {
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"Member '{existingMember.Name}' already up to date.");
-                    Console.ResetColor();
+                    changes.Add((methodSignature, existingMember.Summary, newSummary));
+                    existingMember.Summary = newSummary;
+                    existingMember.Hash = memberHash;
+                    await dbContext.SaveChangesAsync();
                 }
             }
 
-            await dbContext.SaveChangesAsync();
-
-            return hasChanges;
+            return changes;
         }
 
         static async Task<FileSummary> GenerateFileSummary(string filePath, string content, SummaryContext dbContext)
@@ -329,10 +306,6 @@ namespace SourceCodeSummarizer
             string jsonRequestBody = System.Text.Json.JsonSerializer.Serialize(requestBody);
             var content = new StringContent(jsonRequestBody, Encoding.UTF8, "application/json");
 
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("Generating summaries...");
-            Console.ResetColor();
-            
             var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content);
             response.EnsureSuccessStatusCode();
 
