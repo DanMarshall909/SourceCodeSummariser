@@ -1,5 +1,4 @@
 ﻿using System.Text;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -33,7 +32,7 @@ namespace SourceCodeSummarizer
         public string Name { get; set; } = null!;
         public string Type { get; set; } = null!;
         public string Summary { get; set; } = null!;
-        public string Hash { get; set; } = null!; // Added hash property
+        public string Hash { get; set; } = null!;
         public FileEntity File { get; set; } = null!;
         public int FileEntityId { get; set; }
     }
@@ -46,8 +45,9 @@ namespace SourceCodeSummarizer
         static Program()
         {
             // Retrieve the API key from the environment variable
-            apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY_TestChat") ?? throw new InvalidOperationException("API key not found in environment variables.");
-            
+            apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY_TestChat") ??
+                     throw new InvalidOperationException("API key not found in environment variables.");
+
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
             using var dbContext = new SummaryContext();
@@ -97,20 +97,22 @@ namespace SourceCodeSummarizer
             }
 
             // Display summary of processing
-            Console.WriteLine("\n🔄 Changed Files:");
-            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("\nChanged Files:");
+            Console.ForegroundColor = ConsoleColor.Green;
             foreach (var file in changedFiles)
             {
                 Console.WriteLine($"  - {file}");
             }
+
             Console.ResetColor();
 
-            Console.WriteLine("\n✅ Unchanged Files:");
+            Console.WriteLine("Unchanged Files:");
             Console.ForegroundColor = ConsoleColor.Green;
             foreach (var file in unchangedFiles)
             {
                 Console.WriteLine($"  - {file}");
             }
+
             Console.ResetColor();
 
             Console.WriteLine("\nProcessing completed. Summaries saved to the database.");
@@ -133,7 +135,8 @@ namespace SourceCodeSummarizer
 
             bool hasChanges = false;
 
-            var fileEntity = dbContext.Files.Include(f => f.Members).FirstOrDefault(f => f.FileName == fileSummary.FileName);
+            var fileEntity = dbContext.Files.Include(f => f.Members)
+                .FirstOrDefault(f => f.FileName == fileSummary.FileName);
             if (fileEntity == null)
             {
                 fileEntity = new FileEntity { FileName = fileSummary.FileName };
@@ -144,20 +147,38 @@ namespace SourceCodeSummarizer
             foreach (var memberSummary in fileSummary.Members)
             {
                 string memberHash = ComputeHash(memberSummary);
-                var existingMember = dbContext.Members.FirstOrDefault(m => m.Hash == memberHash && m.FileEntityId == fileEntity.Id);
+                var existingMember =
+                    dbContext.Members.FirstOrDefault(m => m.Hash == memberHash && m.FileEntityId == fileEntity.Id);
 
                 if (existingMember == null)
                 {
+                    var parts = memberSummary.Split(':');
+                    if (parts.Length < 2)
+                    {
+                        Console.WriteLine($"Invalid member summary format: {memberSummary}");
+                        continue; // Skip this member if the format is invalid
+                    }
+
                     var newMember = new MemberEntity
                     {
-                        Name = memberSummary.Split(':')[1].Trim(),
-                        Type = memberSummary.Split(':')[0].Trim(),
+                        Name = parts[1].Trim(),
+                        Type = parts[0].Trim(),
                         Summary = memberSummary,
                         Hash = memberHash,
                         File = fileEntity
                     };
                     dbContext.Members.Add(newMember);
                     hasChanges = true;
+
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"Member '{newMember.Name}' has changed. Updating summary.");
+                    Console.ResetColor();
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"Member '{existingMember.Name}' already up to date.");
+                    Console.ResetColor();
                 }
             }
 
@@ -206,9 +227,6 @@ namespace SourceCodeSummarizer
             var existingMember = dbContext.Members.FirstOrDefault(m => m.Hash == memberHash);
             if (existingMember != null)
             {
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"Member '{member}' is already summarized. ✅");
-                Console.ResetColor();
                 summaries.Add(existingMember.Summary);
                 return summaries;
             }
@@ -217,12 +235,16 @@ namespace SourceCodeSummarizer
             {
                 case NamespaceDeclarationSyntax namespaceDecl:
                     summaries.Add($"Namespace: {namespaceDecl.Name}");
-                    summaries.AddRange((await Task.WhenAll(namespaceDecl.Members.Select(m => SummarizeMember(m, dbContext)))).SelectMany(s => s));
+                    summaries.AddRange(
+                        (await Task.WhenAll(namespaceDecl.Members.Select(m => SummarizeMember(m, dbContext))))
+                        .SelectMany(s => s));
                     break;
 
                 case ClassDeclarationSyntax classDecl:
                     summaries.Add($"Class: {classDecl.Identifier.Text}");
-                    summaries.AddRange((await Task.WhenAll(classDecl.Members.Select(m => SummarizeMember(m, dbContext)))).SelectMany(s => s));
+                    summaries.AddRange(
+                        (await Task.WhenAll(classDecl.Members.Select(m => SummarizeMember(m, dbContext))))
+                        .SelectMany(s => s));
                     break;
 
                 case MethodDeclarationSyntax methodDecl:
@@ -239,12 +261,16 @@ namespace SourceCodeSummarizer
 
                 case InterfaceDeclarationSyntax interfaceDecl:
                     summaries.Add($"Interface: {interfaceDecl.Identifier.Text}");
-                    summaries.AddRange((await Task.WhenAll(interfaceDecl.Members.Select(m => SummarizeMember(m, dbContext)))).SelectMany(s => s));
+                    summaries.AddRange(
+                        (await Task.WhenAll(interfaceDecl.Members.Select(m => SummarizeMember(m, dbContext))))
+                        .SelectMany(s => s));
                     break;
 
                 case StructDeclarationSyntax structDecl:
                     summaries.Add($"Struct: {structDecl.Identifier.Text}");
-                    summaries.AddRange((await Task.WhenAll(structDecl.Members.Select(m => SummarizeMember(m, dbContext)))).SelectMany(s => s));
+                    summaries.AddRange(
+                        (await Task.WhenAll(structDecl.Members.Select(m => SummarizeMember(m, dbContext))))
+                        .SelectMany(s => s));
                     break;
 
                 default:
@@ -257,21 +283,13 @@ namespace SourceCodeSummarizer
 
         static async Task<string> SummarizeMethod(MethodDeclarationSyntax methodDecl, SummaryContext dbContext)
         {
-            string methodHash = ComputeHash(methodDecl.ToString());
+            var input = methodDecl.ToString();
+            string methodHash = ComputeHash(input);
             var existingSummary = dbContext.Members.FirstOrDefault(m => m.Hash == methodHash);
 
             if (existingSummary != null)
             {
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' is already summarized. ✅ Using existing summary.");
-                Console.ResetColor();
                 return existingSummary.Summary;
-            }
-            else
-            {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine($"Method '{methodDecl.Identifier.Text}' has changed. 🔄 Updating summary.");
-                Console.ResetColor();
             }
 
             string methodDescription = await GetMethodDescription(methodDecl);
@@ -280,13 +298,15 @@ namespace SourceCodeSummarizer
 
         static IEnumerable<string> SummarizeFields(FieldDeclarationSyntax fieldDecl)
         {
-            return fieldDecl.Declaration.Variables.Select(variable => $"Field: {variable.Identifier.Text} ({fieldDecl.Declaration.Type})");
+            return fieldDecl.Declaration.Variables.Select(variable =>
+                $"Field: {variable.Identifier.Text} ({fieldDecl.Declaration.Type})");
         }
 
         static async Task<string> GetMethodDescription(MethodDeclarationSyntax methodDecl)
         {
             string methodCode = methodDecl.ToString();
-            string prompt = $"Summarize the following C# method optimizing for the smallest number of tokens possible and clarity.:\n\n{methodCode}\n\nSummary:";
+            string prompt =
+                $"Summarize the following C# method optimizing for the smallest number of tokens possible and clarity.:\n\n{methodCode}\n\nSummary:";
 
             int tokenLimit = 50;
 
@@ -298,7 +318,8 @@ namespace SourceCodeSummarizer
                     new
                     {
                         role = "system",
-                        content = "You are a code summarizer. The less tokens you can use the better, but accuracy is far more important than brevity."
+                        content =
+                            "You are a code summarizer. The less tokens you can use the better, but accuracy is far more important than brevity."
                     },
                     new { role = "user", content = prompt }
                 },
@@ -308,12 +329,17 @@ namespace SourceCodeSummarizer
             string jsonRequestBody = System.Text.Json.JsonSerializer.Serialize(requestBody);
             var content = new StringContent(jsonRequestBody, Encoding.UTF8, "application/json");
 
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("Generating summaries...");
+            Console.ResetColor();
+            
             var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content);
             response.EnsureSuccessStatusCode();
 
             string responseContent = await response.Content.ReadAsStringAsync();
             var result = System.Text.Json.JsonDocument.Parse(responseContent);
-            string summary = result.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString().Trim();
+            string summary = result.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content")
+                .GetString().Trim();
 
             return PostProcessSummary(summary, tokenLimit);
         }
