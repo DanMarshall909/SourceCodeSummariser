@@ -11,17 +11,7 @@ namespace SourceCodeSummariser
     {
         private readonly HttpClient _httpClient;
 
-        public SummarizerService(HttpClient httpClient)
-        {
-            _httpClient = httpClient;
-        }
-
-        public async Task<string> SummarizeMethod(MethodDeclarationSyntax methodDecl)
-        {
-            var input = methodDecl.ToString();
-            string methodDescription = await GetMethodDescription(methodDecl);
-            return $"Method: {methodDecl.Identifier.Text} - {methodDescription}";
-        }
+        public SummarizerService(HttpClient httpClient) => _httpClient = httpClient;
 
         public async Task<FileSummary> GenerateFileSummary(string filePath, string content)
         {
@@ -57,62 +47,71 @@ namespace SourceCodeSummariser
 
         public async Task<IEnumerable<string>> SummarizeMember(MemberDeclarationSyntax member)
         {
-            var summaries = new List<string>();
-
-            switch (member)
+            return member switch
             {
-                case NamespaceDeclarationSyntax namespaceDecl:
-                    summaries.Add($"Namespace: {namespaceDecl.Name}");
-                    summaries.AddRange(
-                        (await Task.WhenAll(namespaceDecl.Members.Select(m => SummarizeMember(m))))
-                        .SelectMany(s => s));
-                    break;
-
-                case ClassDeclarationSyntax classDecl:
-                    summaries.Add($"Class: {classDecl.Identifier.Text}");
-                    summaries.AddRange(
-                        (await Task.WhenAll(classDecl.Members.Select(m => SummarizeMember(m))))
-                        .SelectMany(s => s));
-                    break;
-
-                case MethodDeclarationSyntax methodDecl:
-                    summaries.Add(await SummarizeMethod(methodDecl));
-                    break;
-
-                case PropertyDeclarationSyntax propertyDecl:
-                    summaries.Add($"Property: {propertyDecl.Identifier.Text} ({propertyDecl.Type})");
-                    break;
-
-                case FieldDeclarationSyntax fieldDecl:
-                    summaries.AddRange(SummarizeFields(fieldDecl));
-                    break;
-
-                case InterfaceDeclarationSyntax interfaceDecl:
-                    summaries.Add($"Interface: {interfaceDecl.Identifier.Text}");
-                    summaries.AddRange(
-                        (await Task.WhenAll(interfaceDecl.Members.Select(m => SummarizeMember(m))))
-                        .SelectMany(s => s));
-                    break;
-
-                case StructDeclarationSyntax structDecl:
-                    summaries.Add($"Struct: {structDecl.Identifier.Text}");
-                    summaries.AddRange(
-                        (await Task.WhenAll(structDecl.Members.Select(m => SummarizeMember(m))))
-                        .SelectMany(s => s));
-                    break;
-
-                default:
-                    summaries.Add($"Unhandled member type: {member.Kind()}");
-                    break;
-            }
-
-            return summaries;
+                NamespaceDeclarationSyntax namespaceDecl => await Summarize(namespaceDecl),
+                ClassDeclarationSyntax classDecl => await Summarize(classDecl),
+                MethodDeclarationSyntax methodDecl => await Summarize(methodDecl),
+                PropertyDeclarationSyntax propertyDecl => Summarize(propertyDecl),
+                FieldDeclarationSyntax fieldDecl => Summarize(fieldDecl),
+                InterfaceDeclarationSyntax interfaceDecl => await Summarize(interfaceDecl),
+                StructDeclarationSyntax structDecl => await Summarize(structDecl),
+                _ => new[] { $"Unhandled member type: {member.Kind()}" }
+            };
         }
 
-        public IEnumerable<string> SummarizeFields(FieldDeclarationSyntax fieldDecl)
+        public Task<IEnumerable<string>> Summarize(NamespaceDeclarationSyntax namespaceDecl) =>
+            Task.FromResult(new[] { $"Namespace: {namespaceDecl.Name}" }
+                .Concat(namespaceDecl.Members.SelectMany(m => SummarizeMember(m).Result)));
+
+        public Task<IEnumerable<string>> Summarize(ClassDeclarationSyntax classDecl) =>
+            Task.FromResult(new[] { $"Class: {classDecl.Identifier.Text}" }
+                .Concat(classDecl.Members.SelectMany(m => SummarizeMember(m).Result)));
+
+        public async Task<IEnumerable<string>> Summarize(MethodDeclarationSyntax methodDecl)
         {
-            return fieldDecl.Declaration.Variables.Select(variable =>
+            string summary = await SummarizeMethod(methodDecl);
+            return new[] { summary };
+        }
+
+        public IEnumerable<string> Summarize(PropertyDeclarationSyntax propertyDecl) =>
+            new[] { $"Property: {propertyDecl.Identifier.Text} ({propertyDecl.Type})" };
+
+        public IEnumerable<string> Summarize(FieldDeclarationSyntax fieldDecl) =>
+            fieldDecl.Declaration.Variables.Select(variable =>
                 $"Field: {variable.Identifier.Text} ({fieldDecl.Declaration.Type})");
+
+        public Task<IEnumerable<string>> Summarize(InterfaceDeclarationSyntax interfaceDecl) =>
+            Task.FromResult(new[] { $"Interface: {interfaceDecl.Identifier.Text}" }
+                .Concat(interfaceDecl.Members.SelectMany(m => SummarizeMember(m).Result)));
+
+        public Task<IEnumerable<string>> Summarize(StructDeclarationSyntax structDecl) =>
+            Task.FromResult(new[] { $"Struct: {structDecl.Identifier.Text}" }
+                .Concat(structDecl.Members.SelectMany(m => SummarizeMember(m).Result)));
+
+        public async Task<string> SummarizeMethod(MethodDeclarationSyntax methodDecl)
+        {
+            var methodCode = methodDecl.ToString();
+            var requestBody = new
+            {
+                model = "gpt-3.5-turbo",
+                messages = new[]
+                {
+                    (role: "system", content: "You are a code summarizer. The less tokens you can use the better, but accuracy is far more important than brevity."),
+                    (role: "user", content: $"Summarize the following C# method optimizing for the smallest number of tokens possible and clarity.:\n\n{methodCode}\n\nSummary:")
+                },
+                max_tokens = 50
+            };
+
+            var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", content);
+            response.EnsureSuccessStatusCode();
+
+            var summary = JsonDocument.Parse(await response.Content.ReadAsStringAsync())
+                .RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()
+                ?.Trim();
+
+            return PostProcessSummary(summary, 50);
         }
 
         public string ComputeHash(string input)
@@ -122,7 +121,7 @@ namespace SourceCodeSummariser
             return BitConverter.ToString(bytes).Replace("-", "").ToLower();
         }
 
-        public string PostProcessSummary(string summary, int tokenLimit)
+        public static string PostProcessSummary(string summary, int tokenLimit)
         {
             if (!summary.EndsWith(",") && !summary.EndsWith("and") && summary.Length >= tokenLimit) return summary;
 
@@ -137,45 +136,5 @@ namespace SourceCodeSummariser
 
             return summary;
         }
-
-        private async Task<string> GetMethodDescription(MethodDeclarationSyntax methodDecl)
-        {
-            string methodCode = methodDecl.ToString();
-            string prompt =
-                $"Summarize the following C# method optimizing for the smallest number of tokens possible and clarity.:\n\n{methodCode}\n\nSummary:";
-
-            int tokenLimit = 50;
-
-            var requestBody = new
-            {
-                model = "gpt-3.5-turbo",
-                messages = new[]
-                {
-                    new
-                    {
-                        role = "system",
-                        content = "You are a code summarizer. The less tokens you can use the better, but accuracy is far more important than brevity."
-                    },
-                    new { role = "user", content = prompt }
-                },
-                max_tokens = tokenLimit
-            };
-
-            string jsonRequestBody = JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(jsonRequestBody, Encoding.UTF8, "application/json");
-
-            var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", content);
-            response.EnsureSuccessStatusCode();
-
-            string responseContent = await response.Content.ReadAsStringAsync();
-            var result = JsonDocument.Parse(responseContent);
-            string summary = result.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content")
-                .GetString().Trim();
-
-            return PostProcessSummary(summary, tokenLimit);
-        }
     }
 }
-
-
-
