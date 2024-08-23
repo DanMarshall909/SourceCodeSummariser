@@ -4,39 +4,38 @@ using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using SourceCodeSummariser.Summarisers;
 
-namespace SourceCodeSummarizer
+namespace SourceCodeSummariser
 {
     public class SummarizerService
     {
         private readonly HttpClient _httpClient;
 
-        public SummarizerService(HttpClient httpClient)
-        {
-            _httpClient = httpClient;
-        }
+        public SummarizerService(HttpClient httpClient) => _httpClient = httpClient;
 
         public async Task<FileSummary> GenerateFileSummary(string filePath, string content)
         {
             string fileName = Path.GetFileName(filePath);
             var memberSummaries = new List<string>();
 
-            var tree = CSharpSyntaxTree.ParseText(content);
+            SyntaxTree tree = CSharpSyntaxTree.ParseText(content);
             var root = tree.GetRoot() as CompilationUnitSyntax;
 
             if (root == null)
             {
                 Console.WriteLine($"No valid C# syntax found in {fileName}. Skipping file.");
-                return new FileSummary { FileName = fileName, Members = memberSummaries };
             }
-
-            Console.WriteLine($"Parsing members in {fileName}...");
-            foreach (var member in root.Members)
+            else
             {
-                var memberSummary = await SummarizeMember(member);
-                if (memberSummary.Any())
+                Console.WriteLine($"Parsing members in {fileName}...");
+                foreach (var member in root.Members)
                 {
-                    memberSummaries.AddRange(memberSummary);
+                    var memberSummary = await SummarizeMember(member);
+                    if (memberSummary.Any())
+                    {
+                        memberSummaries.AddRange(memberSummary);
+                    }
                 }
             }
 
@@ -45,62 +44,28 @@ namespace SourceCodeSummarizer
 
         public async Task<IEnumerable<string>> SummarizeMember(MemberDeclarationSyntax member)
         {
+            var summarizer = GetSummarizer(member);
+            return summarizer.Summarize(member);
+        }
+
+        private MemberSummarizer GetSummarizer(MemberDeclarationSyntax member)
+        {
             return member switch
             {
-                NamespaceDeclarationSyntax ns => await Summarize(ns),
-                ClassDeclarationSyntax cls => await Summarize(cls),
-                MethodDeclarationSyntax mtd => await Summarize(mtd),
-                PropertyDeclarationSyntax prop => Summarize(prop),
-                FieldDeclarationSyntax fld => Summarize(fld),
-                InterfaceDeclarationSyntax iface => await Summarize(iface),
-                StructDeclarationSyntax strct => await Summarize(strct),
-                _ => new[] { $"Unhandled member type: {member.Kind()}" }
+                NamespaceDeclarationSyntax => new NamespaceSummarizer(this),
+                ClassDeclarationSyntax => new ClassSummarizer(this),
+                MethodDeclarationSyntax => new MethodSummarizer(this),
+                PropertyDeclarationSyntax => new PropertySummarizer(),
+                FieldDeclarationSyntax => new FieldSummarizer(),
+                InterfaceDeclarationSyntax => new InterfaceSummarizer(this),
+                StructDeclarationSyntax => new StructSummarizer(this),
+                _ => new UnhandledSummarizer()
             };
         }
 
-        private Task<IEnumerable<string>> Summarize(NamespaceDeclarationSyntax ns)
+        public async Task<string> SummarizeMethod(MethodDeclarationSyntax methodDecl)
         {
-            var summaries = new List<string> { $"Namespace: {ns.Name}" };
-            summaries.AddRange(ns.Members.SelectMany(m => SummarizeMember(m).Result));
-            return Task.FromResult<IEnumerable<string>>(summaries);
-        }
-
-        private Task<IEnumerable<string>> Summarize(ClassDeclarationSyntax cls)
-        {
-            var summaries = new List<string> { $"Class: {cls.Identifier.Text}" };
-            summaries.AddRange(cls.Members.SelectMany(m => SummarizeMember(m).Result));
-            return Task.FromResult<IEnumerable<string>>(summaries);
-        }
-
-        private async Task<IEnumerable<string>> Summarize(MethodDeclarationSyntax mtd)
-        {
-            var summary = await SummarizeMethod(mtd);
-            return new[] { summary };
-        }
-
-        private IEnumerable<string> Summarize(PropertyDeclarationSyntax prop) =>
-            new[] { $"Property: {prop.Identifier.Text} ({prop.Type})" };
-
-        private IEnumerable<string> Summarize(FieldDeclarationSyntax fld) =>
-            fld.Declaration.Variables.Select(variable => $"Field: {variable.Identifier.Text} ({fld.Declaration.Type})");
-
-        private Task<IEnumerable<string>> Summarize(InterfaceDeclarationSyntax iface)
-        {
-            var summaries = new List<string> { $"Interface: {iface.Identifier.Text}" };
-            summaries.AddRange(iface.Members.SelectMany(m => SummarizeMember(m).Result));
-            return Task.FromResult<IEnumerable<string>>(summaries);
-        }
-
-        private Task<IEnumerable<string>> Summarize(StructDeclarationSyntax strct)
-        {
-            var summaries = new List<string> { $"Struct: {strct.Identifier.Text}" };
-            summaries.AddRange(strct.Members.SelectMany(m => SummarizeMember(m).Result));
-            return Task.FromResult<IEnumerable<string>>(summaries);
-        }
-
-        public async Task<string> SummarizeMethod(MethodDeclarationSyntax mtd)
-        {
-            var methodCode = mtd.ToString();
+            var methodCode = methodDecl.ToString();
             var requestBody = new
             {
                 model = "gpt-3.5-turbo",
@@ -117,8 +82,8 @@ namespace SourceCodeSummarizer
             response.EnsureSuccessStatusCode();
 
             var summary = JsonDocument.Parse(await response.Content.ReadAsStringAsync())
-                .RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content")
-                .GetString()?.Trim();
+                .RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()
+                ?.Trim();
 
             return PostProcessSummary(summary, 50);
         }
@@ -131,7 +96,7 @@ namespace SourceCodeSummarizer
 
             if (summary.EndsWith("and"))
             {
-                summary = summary.Substring(0, summary.Length - 3).TrimEnd();
+                summary = summary.Substring(0, summary.Length - 3).TrimEnd(); // remove "and" and any trailing space
             }
 
             summary += ".";
@@ -147,9 +112,4 @@ namespace SourceCodeSummarizer
         }
     }
 
-    public class FileSummary
-    {
-        public string FileName { get; set; } = string.Empty;
-        public List<string> Members { get; set; } = new List<string>();
-    }
 }
