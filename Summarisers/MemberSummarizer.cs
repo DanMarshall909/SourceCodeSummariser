@@ -4,5 +4,5 @@ namespace SourceCodeSummariser.Summarisers;
 
 public abstract class MemberSummarizer
 {
-    public abstract IEnumerable<string> Summarize(MemberDeclarationSyntax member);
+    public abstract Task<IEnumerable<string>> Summarize(MemberDeclarationSyntax member);
 }

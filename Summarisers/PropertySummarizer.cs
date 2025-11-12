@@ -4,9 +4,10 @@ namespace SourceCodeSummariser.Summarisers;
 
 public class PropertySummarizer : MemberSummarizer
 {
-    public override IEnumerable<string> Summarize(MemberDeclarationSyntax member)
+    public override Task<IEnumerable<string>> Summarize(MemberDeclarationSyntax member)
     {
         var propertyDecl = (PropertyDeclarationSyntax)member;
-        return new[] { $"Property: {propertyDecl.Identifier.Text} ({propertyDecl.Type})" };
+        IEnumerable<string> result = new[] { $"Property: {propertyDecl.Identifier.Text} ({propertyDecl.Type})" };
+        return Task.FromResult(result);
     }
 }

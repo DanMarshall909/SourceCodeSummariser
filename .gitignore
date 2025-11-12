@@ -394,3 +394,7 @@ FodyWeavers.xsd
 *.sln.iml
 /.idea/
 SummariesOutput/
+
+# Project-specific
+summaries.db
+appsettings.json

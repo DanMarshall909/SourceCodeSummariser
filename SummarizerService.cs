@@ -11,8 +11,22 @@ namespace SourceCodeSummariser
     public class SummarizerService
     {
         private readonly HttpClient _httpClient;
+        private readonly OpenAISettings _openAISettings;
 
-        public SummarizerService(HttpClient httpClient) => _httpClient = httpClient;
+        public SummarizerService(HttpClient httpClient, OpenAISettings openAISettings)
+        {
+            _httpClient = httpClient;
+            _openAISettings = openAISettings;
+
+            // Configure HttpClient timeout
+            _httpClient.Timeout = TimeSpan.FromSeconds(openAISettings.TimeoutSeconds);
+
+            // Set OpenAI API key header
+            if (!string.IsNullOrEmpty(openAISettings.ApiKey))
+            {
+                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {openAISettings.ApiKey}");
+            }
+        }
 
         public async Task<FileSummary> GenerateFileSummary(string filePath, string content)
         {
@@ -45,7 +59,7 @@ namespace SourceCodeSummariser
         public async Task<IEnumerable<string>> SummarizeMember(MemberDeclarationSyntax member)
         {
             var summarizer = GetSummarizer(member);
-            return summarizer.Summarize(member);
+            return await summarizer.Summarize(member);
         }
 
         private MemberSummarizer GetSummarizer(MemberDeclarationSyntax member)
@@ -65,27 +79,57 @@ namespace SourceCodeSummariser
 
         public async Task<string> SummarizeMethod(MethodDeclarationSyntax methodDecl)
         {
-            var methodCode = methodDecl.ToString();
-            var requestBody = new
+            var methodSignature = $"{methodDecl.Modifiers} {methodDecl.ReturnType} {methodDecl.Identifier}({string.Join(", ", methodDecl.ParameterList.Parameters)})";
+
+            try
             {
-                model = "gpt-3.5-turbo",
-                messages = new[]
+                var methodCode = methodDecl.ToString();
+                var requestBody = new
                 {
-                    new { role = "system", content = "You are a code summarizer. The less tokens you can use the better, but accuracy is far more important than brevity." },
-                    new { role = "user", content = $"Summarize the following C# method optimizing for the smallest number of tokens possible and clarity.:\n\n{methodCode}\n\nSummary:" }
-                },
-                max_tokens = 50
-            };
+                    model = _openAISettings.Model,
+                    messages = new[]
+                    {
+                        new { role = "system", content = "You are a code summarizer. The less tokens you can use the better, but accuracy is far more important than brevity." },
+                        new { role = "user", content = $"Summarize the following C# method optimizing for the smallest number of tokens possible and clarity.:\n\n{methodCode}\n\nSummary:" }
+                    },
+                    max_tokens = _openAISettings.MaxTokens
+                };
 
-            var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", content);
-            response.EnsureSuccessStatusCode();
+                var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+                var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", content);
 
-            var summary = JsonDocument.Parse(await response.Content.ReadAsStringAsync())
-                .RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()
-                ?.Trim();
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"OpenAI API request failed with status {response.StatusCode}: {errorContent}");
+                }
 
-            return PostProcessSummary(summary, 50);
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var jsonDoc = JsonDocument.Parse(responseContent);
+
+                var summary = jsonDoc.RootElement.GetProperty("choices")[0]
+                    .GetProperty("message")
+                    .GetProperty("content")
+                    .GetString()
+                    ?.Trim();
+
+                if (string.IsNullOrEmpty(summary))
+                {
+                    return $"Method: {methodSignature} - [AI summary unavailable]";
+                }
+
+                return $"Method: {methodSignature} - {PostProcessSummary(summary, _openAISettings.MaxTokens)}";
+            }
+            catch (HttpRequestException ex)
+            {
+                Console.WriteLine($"    ERROR calling OpenAI API for method {methodDecl.Identifier}: {ex.Message}");
+                return $"Method: {methodSignature} - [Error: {ex.Message}]";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"    ERROR processing method {methodDecl.Identifier}: {ex.Message}");
+                return $"Method: {methodSignature} - [Error: {ex.Message}]";
+            }
         }
 
         public static string PostProcessSummary(string summary, int tokenLimit)

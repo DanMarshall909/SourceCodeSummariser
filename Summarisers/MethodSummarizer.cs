@@ -8,9 +8,10 @@ public class MethodSummarizer : MemberSummarizer
 
     public MethodSummarizer(SummarizerService service) => _service = service;
 
-    public override IEnumerable<string> Summarize(MemberDeclarationSyntax member)
+    public override async Task<IEnumerable<string>> Summarize(MemberDeclarationSyntax member)
     {
         var methodDecl = (MethodDeclarationSyntax)member;
-        return new[] { _service.SummarizeMethod(methodDecl).Result };
+        var summary = await _service.SummarizeMethod(methodDecl);
+        return new[] { summary };
     }
 }

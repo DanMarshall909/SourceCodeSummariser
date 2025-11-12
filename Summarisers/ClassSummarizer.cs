@@ -8,10 +8,17 @@ public class ClassSummarizer : MemberSummarizer
 
     public ClassSummarizer(SummarizerService service) => _service = service;
 
-    public override IEnumerable<string> Summarize(MemberDeclarationSyntax member)
+    public override async Task<IEnumerable<string>> Summarize(MemberDeclarationSyntax member)
     {
         var classDecl = (ClassDeclarationSyntax)member;
-        return new[] { $"Class: {classDecl.Identifier.Text}" }
-            .Concat(classDecl.Members.SelectMany(m => _service.SummarizeMember(m).Result));
+        var result = new List<string> { $"Class: {classDecl.Identifier.Text}" };
+
+        foreach (var classMember in classDecl.Members)
+        {
+            var memberSummaries = await _service.SummarizeMember(classMember);
+            result.AddRange(memberSummaries);
+        }
+
+        return result;
     }
 }

@@ -4,8 +4,9 @@ namespace SourceCodeSummariser.Summarisers;
 
 public class UnhandledSummarizer : MemberSummarizer
 {
-    public override IEnumerable<string> Summarize(MemberDeclarationSyntax member)
+    public override Task<IEnumerable<string>> Summarize(MemberDeclarationSyntax member)
     {
-        return new[] { $"Unhandled member type: {member.Kind()}" };
+        IEnumerable<string> result = new[] { $"Unhandled member type: {member.Kind()}" };
+        return Task.FromResult(result);
     }
 }

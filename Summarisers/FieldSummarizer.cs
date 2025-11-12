@@ -4,10 +4,11 @@ namespace SourceCodeSummariser.Summarisers;
 
 public class FieldSummarizer : MemberSummarizer
 {
-    public override IEnumerable<string> Summarize(MemberDeclarationSyntax member)
+    public override Task<IEnumerable<string>> Summarize(MemberDeclarationSyntax member)
     {
         var fieldDecl = (FieldDeclarationSyntax)member;
-        return fieldDecl.Declaration.Variables.Select(variable =>
+        var result = fieldDecl.Declaration.Variables.Select(variable =>
             $"Field: {variable.Identifier.Text} ({fieldDecl.Declaration.Type})");
+        return Task.FromResult(result);
     }
 }

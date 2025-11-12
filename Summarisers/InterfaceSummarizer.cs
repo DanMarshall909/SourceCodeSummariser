@@ -8,10 +8,17 @@ public class InterfaceSummarizer : MemberSummarizer
 
     public InterfaceSummarizer(SummarizerService service) => _service = service;
 
-    public override IEnumerable<string> Summarize(MemberDeclarationSyntax member)
+    public override async Task<IEnumerable<string>> Summarize(MemberDeclarationSyntax member)
     {
         var interfaceDecl = (InterfaceDeclarationSyntax)member;
-        return new[] { $"Interface: {interfaceDecl.Identifier.Text}" }
-            .Concat(interfaceDecl.Members.SelectMany(m => _service.SummarizeMember(m).Result));
+        var result = new List<string> { $"Interface: {interfaceDecl.Identifier.Text}" };
+
+        foreach (var interfaceMember in interfaceDecl.Members)
+        {
+            var memberSummaries = await _service.SummarizeMember(interfaceMember);
+            result.AddRange(memberSummaries);
+        }
+
+        return result;
     }
 }
