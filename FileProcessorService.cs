@@ -2,17 +2,30 @@
 
 namespace SourceCodeSummariser;
 
+/// <summary>
+/// Service for processing source files and managing summaries in the database.
+/// </summary>
 public class FileProcessorService
 {
     private readonly SummaryContext _dbContext;
     private readonly SummarizerService _summarizerService;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FileProcessorService"/> class.
+    /// </summary>
+    /// <param name="dbContext">The database context for storing summaries.</param>
+    /// <param name="summarizerService">The summarizer service for generating summaries.</param>
     public FileProcessorService(SummaryContext dbContext, SummarizerService summarizerService)
     {
         _dbContext = dbContext;
         _summarizerService = summarizerService;
     }
 
+    /// <summary>
+    /// Processes a source file, generates summaries, and tracks changes in the database.
+    /// </summary>
+    /// <param name="filePath">The path to the source file to process.</param>
+    /// <returns>A list of tuples containing method signatures and their old/new summaries for changed members.</returns>
     public async Task<List<(string MethodSignature, string OldSummary, string NewSummary)>> ProcessFile(string filePath)
     {
         string content = await System.IO.File.ReadAllTextAsync(filePath);

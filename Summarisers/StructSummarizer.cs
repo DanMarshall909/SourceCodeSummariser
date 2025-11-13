@@ -8,10 +8,17 @@ public class StructSummarizer : MemberSummarizer
 
     public StructSummarizer(SummarizerService service) => _service = service;
 
-    public override IEnumerable<string> Summarize(MemberDeclarationSyntax member)
+    public override async Task<IEnumerable<string>> Summarize(MemberDeclarationSyntax member)
     {
         var structDecl = (StructDeclarationSyntax)member;
-        return new[] { $"Struct: {structDecl.Identifier.Text}" }
-            .Concat(structDecl.Members.SelectMany(m => _service.SummarizeMember(m).Result));
+        var result = new List<string> { $"Struct: {structDecl.Identifier.Text}" };
+
+        foreach (var structMember in structDecl.Members)
+        {
+            var memberSummaries = await _service.SummarizeMember(structMember);
+            result.AddRange(memberSummaries);
+        }
+
+        return result;
     }
 }
