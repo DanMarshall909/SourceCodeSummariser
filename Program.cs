@@ -80,7 +80,7 @@ namespace SourceCodeSummariser
             {
                 var dbContext = new SummaryContext(settings.Database.ConnectionString);
                 var summarizerService = new SummarizerService(llmProvider, settings.LlmProvider.MaxTokens);
-                var fileProcessorService = new FileProcessorService(dbContext, summarizerService);
+                var fileProcessorService = new FileProcessorService(dbContext, summarizerService, llmProvider, settings.LlmProvider);
 
                 if (watchMode)
                 {

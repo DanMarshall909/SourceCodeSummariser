@@ -11,6 +11,7 @@ namespace SourceCodeSummariser
     public class LangChainProvider : ILlmProvider
     {
         private readonly IChatModel _chatModel;
+        private readonly IEmbeddingModel? _embeddingModel;
         private readonly string _providerType;
 
         /// <summary>
@@ -25,7 +26,9 @@ namespace SourceCodeSummariser
         /// <param name="model">Model name (e.g., gpt-3.5-turbo, gpt-4)</param>
         public LangChainProvider(string apiKey, string model)
         {
-            _chatModel = new OpenAiChatModel(new OpenAiProvider(apiKey), id: model);
+            var provider = new OpenAiProvider(apiKey);
+            _chatModel = new OpenAiChatModel(provider, id: model);
+            _embeddingModel = new OpenAiEmbeddingModel(provider, id: "text-embedding-ada-002");
             _providerType = "OpenAI";
         }
 
@@ -39,12 +42,17 @@ namespace SourceCodeSummariser
         {
             if (useAnthropic)
             {
-                _chatModel = new AnthropicChatModel(new AnthropicProvider(apiKey), id: model);
+                var provider = new AnthropicProvider(apiKey);
+                _chatModel = new AnthropicChatModel(provider, id: model);
+                // Anthropic doesn't have embeddings API, so we'll leave it null
+                _embeddingModel = null;
                 _providerType = "Anthropic";
             }
             else
             {
-                _chatModel = new OpenAiChatModel(new OpenAiProvider(apiKey), id: model);
+                var provider = new OpenAiProvider(apiKey);
+                _chatModel = new OpenAiChatModel(provider, id: model);
+                _embeddingModel = new OpenAiEmbeddingModel(provider, id: "text-embedding-ada-002");
                 _providerType = "OpenAI";
             }
         }
@@ -102,6 +110,38 @@ namespace SourceCodeSummariser
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"{_providerType} error: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Generates an embedding vector using LangChain's embedding models.
+        /// </summary>
+        /// <param name="text">The text to embed</param>
+        /// <param name="model">The embedding model to use (optional)</param>
+        /// <returns>Embedding vector as float array</returns>
+        public async Task<float[]> GenerateEmbedding(string text, string? model = null)
+        {
+            try
+            {
+                if (_embeddingModel == null)
+                {
+                    throw new NotSupportedException(
+                        $"Embedding generation is not supported for {_providerType}. " +
+                        "Please use OpenAI provider or configure a provider that supports embeddings.");
+                }
+
+                var response = await _embeddingModel.CreateEmbeddingsAsync(text);
+
+                if (response?.Values == null || response.Values.Length == 0)
+                {
+                    throw new InvalidOperationException("LangChain returned an empty embedding");
+                }
+
+                return response.Values;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"{_providerType} embedding error: {ex.Message}", ex);
             }
         }
     }

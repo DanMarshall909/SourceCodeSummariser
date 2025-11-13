@@ -108,5 +108,69 @@ namespace SourceCodeSummariser
                 throw new InvalidOperationException($"Failed to parse OpenAI response: {ex.Message}", ex);
             }
         }
+
+        /// <summary>
+        /// Generates an embedding vector using OpenAI's Embeddings API.
+        /// </summary>
+        /// <param name="text">The text to embed</param>
+        /// <param name="model">The embedding model to use (defaults to text-embedding-ada-002)</param>
+        /// <returns>Embedding vector as float array</returns>
+        public async Task<float[]> GenerateEmbedding(string text, string? model = null)
+        {
+            try
+            {
+                var embeddingModel = model ?? "text-embedding-ada-002";
+
+                var requestBody = new
+                {
+                    model = embeddingModel,
+                    input = text
+                };
+
+                var content = new StringContent(
+                    JsonSerializer.Serialize(requestBody),
+                    Encoding.UTF8,
+                    "application/json");
+
+                var response = await _httpClient.PostAsync(
+                    "https://api.openai.com/v1/embeddings",
+                    content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException(
+                        $"OpenAI Embeddings API request failed with status {response.StatusCode}: {errorContent}");
+                }
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var jsonDoc = JsonDocument.Parse(responseContent);
+
+                var embeddingArray = jsonDoc.RootElement
+                    .GetProperty("data")[0]
+                    .GetProperty("embedding");
+
+                var embedding = new List<float>();
+                foreach (var element in embeddingArray.EnumerateArray())
+                {
+                    embedding.Add((float)element.GetDouble());
+                }
+
+                if (embedding.Count == 0)
+                {
+                    throw new InvalidOperationException("OpenAI returned an empty embedding");
+                }
+
+                return embedding.ToArray();
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new InvalidOperationException($"OpenAI Embeddings API error: {ex.Message}", ex);
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException($"Failed to parse OpenAI embedding response: {ex.Message}", ex);
+            }
+        }
     }
 }
