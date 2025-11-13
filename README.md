@@ -57,6 +57,19 @@ $env:OpenAI__ApiKey="sk-your-api-key-here"
 set OpenAI__ApiKey=sk-your-api-key-here
 ```
 
+### Optional: Customize Settings
+
+The `appsettings.json` file is optional. If you want to customize settings like the model, max tokens, or excluded folders:
+
+1. Copy the example configuration:
+```bash
+cp appsettings.example.json appsettings.json
+```
+
+2. Edit `appsettings.json` to customize non-sensitive settings (model, timeouts, excluded folders, etc.)
+
+**Note**: The application will work with just environment variables using sensible defaults. You only need `appsettings.json` if you want to customize the default behavior.
+
 ## Usage
 
 ### Basic Usage
