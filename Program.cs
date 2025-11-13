@@ -59,16 +59,27 @@ namespace SourceCodeSummariser
                 return;
             }
 
+            // Create LLM provider based on configuration
+            ILlmProvider llmProvider;
+            try
+            {
+                llmProvider = CreateLlmProvider(settings, logger);
+            }
+            catch (Exception ex)
+            {
+                logger.WriteLine($"ERROR: Failed to initialize LLM provider: {ex.Message}");
+                return;
+            }
+
             logger.WriteLine($"Processing folder: {folderPath}");
-            logger.WriteLine($"Using model: {settings.OpenAI.Model}");
+            logger.WriteLine($"Using provider: {llmProvider.ProviderName}");
             logger.WriteLine($"Database: {settings.Database.ConnectionString}");
             logger.WriteLine($"Mode: {(watchMode ? "Watch (continuous monitoring)" : "One-time processing")}\n");
 
             try
             {
-                var httpClient = new HttpClient();
                 var dbContext = new SummaryContext(settings.Database.ConnectionString);
-                var summarizerService = new SummarizerService(httpClient, settings.OpenAI);
+                var summarizerService = new SummarizerService(llmProvider, settings.LlmProvider.MaxTokens);
                 var fileProcessorService = new FileProcessorService(dbContext, summarizerService);
 
                 if (watchMode)
@@ -180,6 +191,56 @@ namespace SourceCodeSummariser
                     logger.WriteLine();
                 }
             }
+        }
+
+        private static ILlmProvider CreateLlmProvider(AppSettings settings, ILogger logger)
+        {
+            // Determine API key: use LlmProvider.ApiKey if set, otherwise fall back to OpenAI.ApiKey for backward compatibility
+            var apiKey = !string.IsNullOrEmpty(settings.LlmProvider.ApiKey)
+                ? settings.LlmProvider.ApiKey
+                : settings.OpenAI.ApiKey;
+
+            // Determine model: use LlmProvider.Model if set, otherwise fall back to OpenAI.Model
+            var model = !string.IsNullOrEmpty(settings.LlmProvider.Model)
+                ? settings.LlmProvider.Model
+                : settings.OpenAI.Model;
+
+            var provider = settings.LlmProvider.Provider.ToLower();
+
+            logger.WriteLine($"Initializing {provider} provider with model: {model}");
+
+            return provider switch
+            {
+                "openai" => new OpenAIProvider(new HttpClient(), new OpenAISettings
+                {
+                    ApiKey = apiKey,
+                    Model = model,
+                    MaxTokens = settings.LlmProvider.MaxTokens,
+                    TimeoutSeconds = settings.LlmProvider.TimeoutSeconds
+                }),
+
+                "langchain" => CreateLangChainProvider(settings.LlmProvider, apiKey, model),
+
+                "local" => new LocalProvider(
+                    settings.LlmProvider.LocalEndpoint,
+                    model),
+
+                _ => throw new InvalidOperationException(
+                    $"Unknown provider: {provider}. Supported providers: OpenAI, LangChain, Local")
+            };
+        }
+
+        private static ILlmProvider CreateLangChainProvider(LlmProviderSettings settings, string apiKey, string model)
+        {
+            var subProvider = settings.LangChainProvider.ToLower();
+
+            return subProvider switch
+            {
+                "openai" => new LangChainProvider(apiKey, model),
+                "anthropic" => new LangChainProvider(apiKey, model, useAnthropic: true),
+                _ => throw new InvalidOperationException(
+                    $"Unknown LangChain provider: {subProvider}. Supported: OpenAI, Anthropic")
+            };
         }
 
         private static bool IsInExcludedFolder(string filePath, string rootPath, List<string> excludedFolders)
