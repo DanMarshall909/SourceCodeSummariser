@@ -4,9 +4,13 @@ An AI-powered C# code documentation tool that automatically generates intelligen
 
 ## Features
 
+- **Easy Initialization**: Quick setup for existing codebases with `--init` command
 - **AI-Powered Summaries**: Uses OpenAI's GPT models to generate concise, accurate summaries of your code
+- **Multi-Provider Support**: Works with OpenAI, Anthropic (via LangChain), or Local LLMs (Ollama)
+- **Watch Mode**: Continuously monitors your codebase for changes and updates summaries in real-time
 - **Change Tracking**: Stores summaries in a SQLite database and tracks changes over time
 - **Comprehensive Analysis**: Analyzes classes, methods, properties, fields, interfaces, structs, and namespaces
+- **Tag System**: Normalized tag system for efficient categorization
 - **Configurable**: Flexible configuration via JSON file or environment variables
 - **Error Handling**: Robust error handling with detailed logging
 - **Fast & Async**: Fully asynchronous processing for optimal performance
@@ -16,7 +20,42 @@ An AI-powered C# code documentation tool that automatically generates intelligen
 - .NET 8.0 SDK or later
 - OpenAI API key (get one at https://platform.openai.com/api-keys)
 
-## Installation
+## Quick Start
+
+### Option 1: Initialize for Existing Codebase (Recommended)
+
+The easiest way to get started is to use the `--init` command:
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd SourceCodeSummariser
+```
+
+2. Restore dependencies and build:
+```bash
+dotnet restore
+dotnet build
+```
+
+3. Initialize the tool:
+```bash
+dotnet run --init
+```
+
+This will:
+- Create `appsettings.json` from the example template
+- Initialize the SQLite database
+- Provide guidance on next steps
+
+4. Set your API key (see Configuration section below)
+
+5. Start processing your code:
+```bash
+dotnet run <path-to-your-code>
+```
+
+### Option 2: Manual Installation
 
 1. Clone the repository:
 ```bash
@@ -32,6 +71,11 @@ dotnet restore
 3. Build the project:
 ```bash
 dotnet build
+```
+
+4. (Optional) Copy configuration:
+```bash
+cp appsettings.example.json appsettings.json
 ```
 
 ## Configuration
@@ -100,8 +144,11 @@ dotnet run /home/user/projects/MyApp
 ### Command-Line Options
 
 ```
+dotnet run --init      # Initialize tool for existing codebase
 dotnet run --help      # Show help message
 dotnet run -h          # Show help message
+dotnet run --watch     # Enable watch mode (continuous monitoring)
+dotnet run -w          # Enable watch mode (short form)
 ```
 
 ## How It Works
