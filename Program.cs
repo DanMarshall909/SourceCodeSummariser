@@ -23,12 +23,12 @@ namespace SourceCodeSummariser
             configuration.Bind(settings);
 
             // Validate configuration
-            if (string.IsNullOrEmpty(settings.OpenAI.ApiKey) || settings.OpenAI.ApiKey == "YOUR_OPENAI_API_KEY_HERE")
+            if (string.IsNullOrEmpty(settings.OpenAI.ApiKey))
             {
                 Console.WriteLine("ERROR: OpenAI API key not configured.");
-                Console.WriteLine("\nPlease set your API key in one of the following ways:");
-                Console.WriteLine("  1. Edit appsettings.json and set OpenAI:ApiKey");
-                Console.WriteLine("  2. Set environment variable: OpenAI__ApiKey=your-key-here");
+                Console.WriteLine("\nPlease set your API key as an environment variable:");
+                Console.WriteLine("  Linux/macOS:  export OpenAI__ApiKey=your-key-here");
+                Console.WriteLine("  Windows:      set OpenAI__ApiKey=your-key-here");
                 Console.WriteLine("\nYou can get an API key from: https://platform.openai.com/api-keys");
                 return;
             }
@@ -170,15 +170,14 @@ namespace SourceCodeSummariser
             Console.WriteLine("  -h, --help       Show this help message");
             Console.WriteLine();
             Console.WriteLine("CONFIGURATION:");
-            Console.WriteLine("  The tool reads configuration from appsettings.json:");
-            Console.WriteLine("  - OpenAI:ApiKey          Your OpenAI API key (required)");
+            Console.WriteLine("  API Key (required) - Set via environment variable:");
+            Console.WriteLine("    OpenAI__ApiKey=your-key-here");
+            Console.WriteLine();
+            Console.WriteLine("  Other settings can be customized in appsettings.json:");
             Console.WriteLine("  - OpenAI:Model           Model to use (default: gpt-3.5-turbo)");
             Console.WriteLine("  - OpenAI:MaxTokens       Max tokens per summary (default: 50)");
             Console.WriteLine("  - Database:ConnectionString  SQLite database path");
             Console.WriteLine("  - Processing:ExcludedFolders  Folders to skip (default: bin, obj, .git)");
-            Console.WriteLine();
-            Console.WriteLine("  You can also set configuration via environment variables:");
-            Console.WriteLine("    OpenAI__ApiKey=your-key-here");
             Console.WriteLine();
             Console.WriteLine("EXAMPLES:");
             Console.WriteLine("  SourceCodeSummariser ./MyProject");

@@ -36,31 +36,9 @@ dotnet build
 
 ## Configuration
 
-### Option 1: Edit appsettings.json
+### Set Your OpenAI API Key (Required)
 
-Open `appsettings.json` and set your OpenAI API key:
-
-```json
-{
-  "OpenAI": {
-    "ApiKey": "sk-your-api-key-here",
-    "Model": "gpt-3.5-turbo",
-    "MaxTokens": 50,
-    "TimeoutSeconds": 30
-  },
-  "Database": {
-    "ConnectionString": "Data Source=summaries.db"
-  },
-  "Processing": {
-    "ExcludedFolders": [ "bin", "obj", ".git", ".vs", "node_modules" ],
-    "FilePattern": "*.cs",
-    "MaxRetries": 3,
-    "RetryDelayMilliseconds": 1000
-  }
-}
-```
-
-### Option 2: Use Environment Variables
+**IMPORTANT**: For security, always set your API key as an environment variable. Never commit API keys to version control.
 
 Set your API key via environment variable:
 
@@ -173,21 +151,40 @@ The database is created automatically on first run.
 
 ### OpenAI Settings
 
-- `ApiKey`: Your OpenAI API key (required)
-- `Model`: OpenAI model to use (default: `gpt-3.5-turbo`)
-- `MaxTokens`: Maximum tokens per summary (default: `50`)
-- `TimeoutSeconds`: HTTP timeout in seconds (default: `30`)
+- `ApiKey`: Your OpenAI API key (required) - **Set via environment variable `OpenAI__ApiKey`**
+- `Model`: OpenAI model to use (default: `gpt-3.5-turbo`) - Configurable in appsettings.json
+- `MaxTokens`: Maximum tokens per summary (default: `50`) - Configurable in appsettings.json
+- `TimeoutSeconds`: HTTP timeout in seconds (default: `30`) - Configurable in appsettings.json
 
 ### Database Settings
 
-- `ConnectionString`: SQLite connection string (default: `Data Source=summaries.db`)
+- `ConnectionString`: SQLite connection string (default: `Data Source=summaries.db`) - Configurable in appsettings.json
 
 ### Processing Settings
 
-- `ExcludedFolders`: Array of folder names to skip (default: `["bin", "obj", ".git", ".vs", "node_modules"]`)
-- `FilePattern`: File pattern to match (default: `*.cs`)
-- `MaxRetries`: Number of retry attempts for failed operations (default: `3`)
-- `RetryDelayMilliseconds`: Delay between retries in milliseconds (default: `1000`)
+- `ExcludedFolders`: Array of folder names to skip (default: `["bin", "obj", ".git", ".vs", "node_modules"]`) - Configurable in appsettings.json
+- `FilePattern`: File pattern to match (default: `*.cs`) - Configurable in appsettings.json
+- `MaxRetries`: Number of retry attempts for failed operations (default: `3`) - Configurable in appsettings.json
+- `RetryDelayMilliseconds`: Delay between retries in milliseconds (default: `1000`) - Configurable in appsettings.json
+
+### Customizing Settings
+
+You can customize non-sensitive settings by editing `appsettings.json`:
+
+```json
+{
+  "OpenAI": {
+    "Model": "gpt-4",
+    "MaxTokens": 100,
+    "TimeoutSeconds": 60
+  },
+  "Processing": {
+    "ExcludedFolders": [ "bin", "obj", ".git", ".vs", "node_modules", "packages" ]
+  }
+}
+```
+
+**Note**: Never put your API key in `appsettings.json`. Always use environment variables for sensitive credentials.
 
 ## Architecture
 
@@ -233,7 +230,7 @@ dotnet publish -c Release -r osx-x64 --self-contained
 
 ### "OpenAI API key not configured"
 
-Make sure you've set your API key in `appsettings.json` or via environment variable.
+Make sure you've set your API key as an environment variable (`OpenAI__ApiKey`). See the Configuration section above for details.
 
 ### "The specified folder does not exist"
 
