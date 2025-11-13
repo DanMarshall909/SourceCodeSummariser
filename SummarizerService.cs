@@ -9,31 +9,22 @@ using SourceCodeSummariser.Summarisers;
 namespace SourceCodeSummariser
 {
     /// <summary>
-    /// Service for analyzing C# code and generating AI-powered summaries using OpenAI.
+    /// Service for analyzing C# code and generating AI-powered summaries using configurable LLM providers.
     /// </summary>
     public class SummarizerService
     {
-        private readonly HttpClient _httpClient;
-        private readonly OpenAISettings _openAISettings;
+        private readonly ILlmProvider _llmProvider;
+        private readonly int _maxTokens;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SummarizerService"/> class.
         /// </summary>
-        /// <param name="httpClient">The HTTP client for making API requests.</param>
-        /// <param name="openAISettings">The OpenAI configuration settings.</param>
-        public SummarizerService(HttpClient httpClient, OpenAISettings openAISettings)
+        /// <param name="llmProvider">The LLM provider for generating summaries.</param>
+        /// <param name="maxTokens">Maximum tokens for summary generation.</param>
+        public SummarizerService(ILlmProvider llmProvider, int maxTokens = 50)
         {
-            _httpClient = httpClient;
-            _openAISettings = openAISettings;
-
-            // Configure HttpClient timeout
-            _httpClient.Timeout = TimeSpan.FromSeconds(openAISettings.TimeoutSeconds);
-
-            // Set OpenAI API key header
-            if (!string.IsNullOrEmpty(openAISettings.ApiKey))
-            {
-                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {openAISettings.ApiKey}");
-            }
+            _llmProvider = llmProvider;
+            _maxTokens = maxTokens;
         }
 
         /// <summary>
@@ -102,7 +93,7 @@ namespace SourceCodeSummariser
         }
 
         /// <summary>
-        /// Generates an AI-powered summary for a method using OpenAI's API.
+        /// Generates an AI-powered summary for a method using the configured LLM provider.
         /// </summary>
         /// <param name="methodDecl">The method declaration syntax node.</param>
         /// <returns>A formatted string containing the method signature and AI-generated summary.</returns>
@@ -113,50 +104,21 @@ namespace SourceCodeSummariser
             try
             {
                 var methodCode = methodDecl.ToString();
-                var requestBody = new
-                {
-                    model = _openAISettings.Model,
-                    messages = new[]
-                    {
-                        new { role = "system", content = "You are a code summarizer. The less tokens you can use the better, but accuracy is far more important than brevity." },
-                        new { role = "user", content = $"Summarize the following C# method optimizing for the smallest number of tokens possible and clarity.:\n\n{methodCode}\n\nSummary:" }
-                    },
-                    max_tokens = _openAISettings.MaxTokens
-                };
+                var systemPrompt = "You are a code summarizer. The less tokens you can use the better, but accuracy is far more important than brevity.";
+                var userPrompt = $"Summarize the following C# method optimizing for the smallest number of tokens possible and clarity.:\n\n{{code}}\n\nSummary:";
 
-                var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-                var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", content);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    throw new HttpRequestException($"OpenAI API request failed with status {response.StatusCode}: {errorContent}");
-                }
-
-                var responseContent = await response.Content.ReadAsStringAsync();
-                var jsonDoc = JsonDocument.Parse(responseContent);
-
-                var summary = jsonDoc.RootElement.GetProperty("choices")[0]
-                    .GetProperty("message")
-                    .GetProperty("content")
-                    .GetString()
-                    ?.Trim();
+                var summary = await _llmProvider.GenerateSummary(methodCode, systemPrompt, userPrompt, _maxTokens);
 
                 if (string.IsNullOrEmpty(summary))
                 {
                     return $"Method: {methodSignature} - [AI summary unavailable]";
                 }
 
-                return $"Method: {methodSignature} - {PostProcessSummary(summary, _openAISettings.MaxTokens)}";
-            }
-            catch (HttpRequestException ex)
-            {
-                Console.WriteLine($"    ERROR calling OpenAI API for method {methodDecl.Identifier}: {ex.Message}");
-                return $"Method: {methodSignature} - [Error: {ex.Message}]";
+                return $"Method: {methodSignature} - {PostProcessSummary(summary, _maxTokens)}";
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"    ERROR processing method {methodDecl.Identifier}: {ex.Message}");
+                Console.WriteLine($"    ERROR calling {_llmProvider.ProviderName} for method {methodDecl.Identifier}: {ex.Message}");
                 return $"Method: {methodSignature} - [Error: {ex.Message}]";
             }
         }

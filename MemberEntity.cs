@@ -39,4 +39,9 @@ public class MemberEntity
     /// Gets or sets the foreign key to the parent file.
     /// </summary>
     public int FileEntityId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the collection of tags associated with this member.
+    /// </summary>
+    public ICollection<MemberTagEntity> MemberTags { get; set; } = new List<MemberTagEntity>();
 }
