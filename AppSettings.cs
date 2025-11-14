@@ -135,5 +135,17 @@ namespace SourceCodeSummariser
         /// Default: http://localhost:11434 (Ollama default).
         /// </summary>
         public string LocalEndpoint { get; set; } = "http://localhost:11434";
+
+        /// <summary>
+        /// Gets or sets the embedding model name.
+        /// Examples: "text-embedding-ada-002" (OpenAI), "text-embedding-3-small" (OpenAI), "mxbai-embed-large" (Ollama).
+        /// </summary>
+        public string EmbeddingModel { get; set; } = "text-embedding-ada-002";
+
+        /// <summary>
+        /// Gets or sets whether to generate embeddings during summarization.
+        /// Default: true.
+        /// </summary>
+        public bool EnableEmbeddings { get; set; } = true;
     }
 }

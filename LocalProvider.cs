@@ -10,7 +10,9 @@ namespace SourceCodeSummariser
     public class LocalProvider : ILlmProvider
     {
         private readonly IChatModel _chatModel;
+        private readonly IEmbeddingModel _embeddingModel;
         private readonly string _model;
+        private readonly string _endpoint;
 
         /// <summary>
         /// Gets the provider name.
@@ -25,12 +27,14 @@ namespace SourceCodeSummariser
         public LocalProvider(string endpoint, string model)
         {
             _model = model;
+            _endpoint = endpoint;
             var provider = new OllamaProvider(
                 options: new OllamaConfiguration
                 {
                     Host = endpoint
                 });
             _chatModel = new OllamaChatModel(provider, id: model);
+            _embeddingModel = new OllamaEmbeddingModel(provider, id: "mxbai-embed-large");
         }
 
         /// <summary>
@@ -75,6 +79,43 @@ namespace SourceCodeSummariser
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"Local LLM error: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Generates an embedding vector using a local embedding model through Ollama.
+        /// </summary>
+        /// <param name="text">The text to embed</param>
+        /// <param name="model">The embedding model to use (optional, defaults to mxbai-embed-large)</param>
+        /// <returns>Embedding vector as float array</returns>
+        public async Task<float[]> GenerateEmbedding(string text, string? model = null)
+        {
+            try
+            {
+                // Use custom model if specified, otherwise use default
+                IEmbeddingModel embeddingModel = _embeddingModel;
+                if (!string.IsNullOrEmpty(model))
+                {
+                    var provider = new OllamaProvider(
+                        options: new OllamaConfiguration
+                        {
+                            Host = _endpoint
+                        });
+                    embeddingModel = new OllamaEmbeddingModel(provider, id: model);
+                }
+
+                var response = await embeddingModel.CreateEmbeddingsAsync(text);
+
+                if (response?.Values == null || response.Values.Length == 0)
+                {
+                    throw new InvalidOperationException("Ollama returned an empty embedding");
+                }
+
+                return response.Values;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Local embedding error: {ex.Message}", ex);
             }
         }
     }

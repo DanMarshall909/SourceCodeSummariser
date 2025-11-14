@@ -31,6 +31,12 @@ public class MemberEntity
     public string Hash { get; set; } = null!;
 
     /// <summary>
+    /// Gets or sets the embedding vector for semantic similarity search.
+    /// Stored as serialized float array (typically 1536 dimensions for OpenAI).
+    /// </summary>
+    public byte[]? Embedding { get; set; }
+
+    /// <summary>
     /// Gets or sets the parent file that contains this member.
     /// </summary>
     public FileEntity File { get; set; } = null!;

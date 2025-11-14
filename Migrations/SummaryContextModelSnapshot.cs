@@ -37,6 +37,9 @@ namespace SourceCodeSummariser.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<byte[]>("Embedding")
+                        .HasColumnType("BLOB");
+
                     b.Property<int>("FileEntityId")
                         .HasColumnType("INTEGER");
 
@@ -63,6 +66,52 @@ namespace SourceCodeSummariser.Migrations
                     b.ToTable("Members");
                 });
 
+            modelBuilder.Entity("SourceCodeSummariser.MemberTagEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MemberId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TagId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MemberId");
+
+                    b.HasIndex("TagId");
+
+                    b.HasIndex("MemberId", "TagId")
+                        .IsUnique();
+
+                    b.ToTable("MemberTags");
+                });
+
+            modelBuilder.Entity("SourceCodeSummariser.TagEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name", "Category")
+                        .IsUnique();
+
+                    b.ToTable("Tags");
+                });
+
             modelBuilder.Entity("SourceCodeSummariser.MemberEntity", b =>
                 {
                     b.HasOne("SourceCodeSummariser.FileEntity", "File")
@@ -74,9 +123,38 @@ namespace SourceCodeSummariser.Migrations
                     b.Navigation("File");
                 });
 
+            modelBuilder.Entity("SourceCodeSummariser.MemberTagEntity", b =>
+                {
+                    b.HasOne("SourceCodeSummariser.MemberEntity", "Member")
+                        .WithMany("MemberTags")
+                        .HasForeignKey("MemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SourceCodeSummariser.TagEntity", "Tag")
+                        .WithMany("MemberTags")
+                        .HasForeignKey("TagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Member");
+
+                    b.Navigation("Tag");
+                });
+
             modelBuilder.Entity("SourceCodeSummariser.FileEntity", b =>
                 {
                     b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("SourceCodeSummariser.MemberEntity", b =>
+                {
+                    b.Navigation("MemberTags");
+                });
+
+            modelBuilder.Entity("SourceCodeSummariser.TagEntity", b =>
+                {
+                    b.Navigation("MemberTags");
                 });
 #pragma warning restore 612, 618
         }

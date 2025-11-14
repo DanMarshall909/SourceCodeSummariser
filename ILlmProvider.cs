@@ -17,6 +17,14 @@ namespace SourceCodeSummariser
         Task<string> GenerateSummary(string code, string systemPrompt, string userPrompt, int maxTokens);
 
         /// <summary>
+        /// Generates an embedding vector for the provided text.
+        /// </summary>
+        /// <param name="text">The text to embed</param>
+        /// <param name="model">The embedding model to use (optional, uses provider default if not specified)</param>
+        /// <returns>The embedding vector as a float array</returns>
+        Task<float[]> GenerateEmbedding(string text, string? model = null);
+
+        /// <summary>
         /// Gets the provider name (e.g., "OpenAI", "Anthropic", "LangChain").
         /// </summary>
         string ProviderName { get; }
