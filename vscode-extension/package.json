@@ -1,0 +1,192 @@
+{
+  "name": "sourcecode-summariser",
+  "displayName": "SourceCode Summariser",
+  "description": "AI-powered code documentation and semantic search for C# projects",
+  "version": "1.0.0",
+  "publisher": "sourcecode-summariser",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "csharp",
+    "documentation",
+    "ai",
+    "code-analysis",
+    "semantic-search"
+  ],
+  "activationEvents": [
+    "onLanguage:csharp",
+    "onCommand:sourcecodeSummariser.analyzeworkspace",
+    "onCommand:sourcecodeSummariser.analyzeFile",
+    "onCommand:sourcecodeSummariser.semanticSearch",
+    "onCommand:sourcecodeSummariser.showSummaries",
+    "onCommand:sourcecodeSummariser.toggleWatch",
+    "onCommand:sourcecodeSummariser.initialize"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sourcecodeSummariser.analyzeWorkspace",
+        "title": "SourceCode Summariser: Analyze Workspace",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "sourcecodeSummariser.analyzeFile",
+        "title": "SourceCode Summariser: Analyze Current File",
+        "icon": "$(file)"
+      },
+      {
+        "command": "sourcecodeSummariser.semanticSearch",
+        "title": "SourceCode Summariser: Semantic Search",
+        "icon": "$(search)"
+      },
+      {
+        "command": "sourcecodeSummariser.showSummaries",
+        "title": "SourceCode Summariser: Show Summaries",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "sourcecodeSummariser.toggleWatch",
+        "title": "SourceCode Summariser: Toggle Watch Mode",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "sourcecodeSummariser.initialize",
+        "title": "SourceCode Summariser: Initialize Project",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "sourcecodeSummariser.refreshSummaries",
+        "title": "Refresh Summaries",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sourcecodeSummariser",
+          "title": "Code Summaries",
+          "icon": "$(book)"
+        }
+      ]
+    },
+    "views": {
+      "sourcecodeSummariser": [
+        {
+          "id": "summariesView",
+          "name": "Code Summaries",
+          "contextualTitle": "SourceCode Summariser"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "sourcecodeSummariser.refreshSummaries",
+          "when": "view == summariesView",
+          "group": "navigation"
+        },
+        {
+          "command": "sourcecodeSummariser.semanticSearch",
+          "when": "view == summariesView",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "sourcecodeSummariser.analyzeFile",
+          "when": "resourceLangId == csharp",
+          "group": "sourcecodeSummariser"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "sourcecodeSummariser.analyzeFile",
+          "when": "resourceLangId == csharp",
+          "group": "sourcecodeSummariser"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SourceCode Summariser",
+      "properties": {
+        "sourcecodeSummariser.toolPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the SourceCodeSummariser executable (leave empty to auto-detect)"
+        },
+        "sourcecodeSummariser.llmProvider": {
+          "type": "string",
+          "enum": ["OpenAI", "Anthropic", "Local"],
+          "default": "OpenAI",
+          "description": "LLM provider to use for generating summaries"
+        },
+        "sourcecodeSummariser.model": {
+          "type": "string",
+          "default": "gpt-3.5-turbo",
+          "description": "Model name to use (e.g., gpt-3.5-turbo, claude-3-sonnet-20240229)"
+        },
+        "sourcecodeSummariser.maxTokens": {
+          "type": "number",
+          "default": 150,
+          "description": "Maximum tokens for summary generation"
+        },
+        "sourcecodeSummariser.enableEmbeddings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable semantic search using embeddings"
+        },
+        "sourcecodeSummariser.embeddingModel": {
+          "type": "string",
+          "default": "text-embedding-ada-002",
+          "description": "Model to use for generating embeddings"
+        },
+        "sourcecodeSummariser.databasePath": {
+          "type": "string",
+          "default": "summaries.db",
+          "description": "Path to the SQLite database (relative to workspace root)"
+        },
+        "sourcecodeSummariser.excludedFolders": {
+          "type": "array",
+          "default": ["bin", "obj", ".git", ".vs", "node_modules"],
+          "description": "Folders to exclude from analysis"
+        },
+        "sourcecodeSummariser.autoWatch": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically enable watch mode when workspace is opened"
+        },
+        "sourcecodeSummariser.showHoverSummaries": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show code summaries on hover"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.x",
+    "@typescript-eslint/parser": "^6.x",
+    "eslint": "^8.x",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "sqlite3": "^5.1.7"
+  }
+}
