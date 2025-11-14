@@ -1,0 +1,308 @@
+# Source Code Summariser - Test Suite
+
+Comprehensive unit and integration tests for the Source Code Summariser and MCP integration.
+
+## Test Coverage
+
+### C# Tests (xUnit)
+
+#### 1. **ApiEndpointsTests** (Integration Tests)
+Tests for HTTP API endpoints used by the MCP server.
+
+**Coverage:**
+- Health endpoint returns correct status
+- Search endpoint with valid queries
+- Tags endpoint returns all tags
+- Member endpoint retrieves by ID
+- Member endpoint handles not found (404)
+- All endpoints return proper HTTP status codes
+
+**Technology:** xUnit, ASP.NET TestServer, In-Memory Database
+
+#### 2. **SemanticSearchServiceTests** (Unit Tests)
+Tests for semantic search functionality.
+
+**Coverage:**
+- Search with valid queries returns results
+- High similarity thresholds filter results
+- Tag-based filtering works correctly
+- Finding similar members by ID
+- Invalid member IDs return empty results
+- Results ordered by similarity (descending)
+- TopK limit is respected
+- Cosine similarity calculations
+
+**Test Data:** Seeded with test embeddings and tags
+
+#### 3. **SummarizerServiceTests** (Unit Tests)
+Tests for AI code summarization service.
+
+**Coverage:**
+- Summarize methods with valid code
+- Handle empty code gracefully
+- Generate appropriate prompts for complex code
+- Include method names in prompts
+- Handle LLM provider errors
+- Constructor validation
+- Different max token configurations
+
+**Mocking:** Uses Moq to mock ILlmProvider
+
+#### 4. **OpenAIProviderTests** (Unit Tests)
+Tests for OpenAI API integration.
+
+**Coverage:**
+- Constructor validation (API key required)
+- Generate summaries with valid input
+- Generate embeddings (1536 dimensions)
+- Handle API errors (400, 500)
+- Support different models (gpt-3.5-turbo, gpt-4)
+- Support different max token configurations
+- HTTP request/response handling
+
+**Mocking:** Uses HttpMessageHandler mocking
+
+#### 5. **IntegrationTests** (End-to-End Tests)
+Full workflow integration tests.
+
+**Coverage:**
+- Process file → Search → Find results (end-to-end)
+- File processing generates embeddings
+- Tag extraction from code (public, private, async)
+- Change detection (no changes on second run)
+- Update detection (changes on file modification)
+- Tag-based filtering in real scenarios
+- Temporary file creation/cleanup
+
+**Scenario:** Creates real C# files, processes them, and searches
+
+### TypeScript Tests (Jest)
+
+#### 6. **mcp-server.test.ts** (MCP Server Tests)
+Tests for MCP server API interactions.
+
+**Coverage:**
+
+**Search Endpoint:**
+- Correct API parameters
+- Empty results handling
+- Network error handling
+
+**Search with Tags:**
+- Tag filtering
+- Multiple tag combinations
+
+**Similar Members:**
+- Find by member ID
+- Similarity scoring
+
+**Member Details:**
+- Retrieve by ID
+- Handle 404 not found
+
+**Tags Endpoint:**
+- List all tags
+- Tag counts
+
+**File Summary:**
+- File summary retrieval
+- Member listing
+
+**Health Check:**
+- Service status
+
+**Error Handling:**
+- 400 Bad Request
+- 500 Internal Server Error
+- Connection refused (ECONNREFUSED)
+
+**Parameter Validation:**
+- Default parameters
+- Custom parameters
+- Type validation
+
+**Mocking:** Uses Jest to mock axios
+
+## Running Tests
+
+### C# Tests
+
+```bash
+# Run all C# tests
+dotnet test
+
+# Run with detailed output
+dotnet test --logger "console;verbosity=detailed"
+
+# Run specific test class
+dotnet test --filter "FullyQualifiedName~SemanticSearchServiceTests"
+
+# Generate coverage report
+dotnet test --collect:"XPlat Code Coverage"
+```
+
+### TypeScript Tests
+
+```bash
+# Install dependencies
+cd mcp-server
+npm install
+
+# Run all tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Generate coverage
+npm run test:coverage
+```
+
+## Test Architecture
+
+```
+┌─────────────────────────────────────┐
+│      Unit Tests (Isolated)          │
+│  - SummarizerServiceTests           │
+│  - OpenAIProviderTests              │
+│  - SemanticSearchServiceTests       │
+└─────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────┐
+│   Integration Tests (Multi-layer)   │
+│  - ApiEndpointsTests                │
+│  - IntegrationTests                 │
+└─────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────┐
+│    MCP Server Tests (API Client)    │
+│  - mcp-server.test.ts               │
+└─────────────────────────────────────┘
+```
+
+## Test Data
+
+### Seeded Test Data
+
+**Tags:**
+- `public` (visibility)
+- `private` (visibility)
+- `async` (modifier)
+
+**Members:**
+- `AuthenticateUser` - Authentication method
+- `GetUserById` - User retrieval method
+- `ValidatePassword` - Password validation method
+
+**Files:**
+- `AuthService.cs`
+- `UserService.cs`
+- `TestFile.cs`
+
+### Mock Data
+
+**Embeddings:**
+- 1536-dimensional vectors (OpenAI ada-002 format)
+- Normalized for cosine similarity testing
+
+**Summaries:**
+- Generated by mocked LLM provider
+- Consistent format for testing
+
+## Test Utilities
+
+### In-Memory Database
+Uses Entity Framework Core's in-memory provider for isolated tests.
+
+### Mocking
+- **Moq** - C# mocking framework
+- **Jest** - TypeScript mocking
+
+### Temporary Files
+Integration tests create/cleanup temporary C# files for realistic testing.
+
+## Assertions
+
+### C# (xUnit)
+```csharp
+Assert.Equal(expected, actual);
+Assert.NotNull(value);
+Assert.True(condition);
+Assert.Contains(collection, item);
+Assert.All(collection, predicate);
+```
+
+### TypeScript (Jest)
+```typescript
+expect(value).toBe(expected);
+expect(value).toHaveLength(count);
+expect(async).rejects.toThrow();
+expect(mock).toHaveBeenCalledWith(args);
+```
+
+## Code Coverage Goals
+
+- **Unit Tests:** >80% coverage
+- **Integration Tests:** Critical paths covered
+- **Edge Cases:** Error handling, null checks, invalid input
+
+## CI/CD Integration
+
+Add to your CI pipeline:
+
+```yaml
+# .github/workflows/test.yml
+- name: Run C# Tests
+  run: dotnet test --configuration Release
+
+- name: Run TypeScript Tests
+  run: |
+    cd mcp-server
+    npm test
+```
+
+## Troubleshooting
+
+### "Database is locked"
+Use unique database names for each test:
+```csharp
+.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+```
+
+### "Module not found" (TypeScript)
+Ensure Jest config has correct module resolution:
+```javascript
+extensionsToTreatAsEsm: ['.ts']
+```
+
+### "Test timeout"
+Increase Jest timeout:
+```typescript
+jest.setTimeout(10000); // 10 seconds
+```
+
+## Best Practices
+
+1. **Isolation** - Each test should be independent
+2. **Cleanup** - Dispose of resources (using IDisposable)
+3. **Naming** - Descriptive test names (Given_When_Then pattern)
+4. **Arrange-Act-Assert** - Clear test structure
+5. **Mocking** - Mock external dependencies (LLM APIs, HTTP)
+6. **Coverage** - Test happy paths AND error cases
+
+## Future Enhancements
+
+- [ ] Add performance benchmarks
+- [ ] Add load testing for API endpoints
+- [ ] Add integration tests with real LLM APIs (feature-flagged)
+- [ ] Add mutation testing
+- [ ] Add contract testing for MCP protocol
+- [ ] Add E2E tests with Claude Desktop
+
+## Contributing
+
+When adding new features:
+1. Write tests first (TDD)
+2. Ensure >80% coverage
+3. Test both success and failure cases
+4. Update this README with new test descriptions
