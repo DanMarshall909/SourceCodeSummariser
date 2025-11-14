@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "source-code-summariser": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/SourceCodeSummariser/mcp-server/dist/index.js"
+      ],
+      "env": {
+        "SUMMARISER_API_URL": "http://localhost:5000"
+      }
+    }
+  }
+}

@@ -102,7 +102,53 @@ dotnet run /home/user/projects/MyApp
 ```
 dotnet run --help      # Show help message
 dotnet run -h          # Show help message
+dotnet run api         # Start HTTP API server for MCP integration
 ```
+
+## MCP Integration (AI Coding Bot Support)
+
+This tool now includes an MCP (Model Context Protocol) server that enables AI coding bots like Claude Desktop to interact with your codebase through semantic search.
+
+### Quick Start with Claude Desktop
+
+1. **Process your codebase** (one-time setup):
+   ```bash
+   dotnet run ./YourProject
+   ```
+
+2. **Start the API server**:
+   ```bash
+   dotnet run api
+   ```
+
+3. **Install and configure the MCP server**:
+   ```bash
+   cd mcp-server
+   npm install
+   npm run build
+   ```
+
+4. **Configure Claude Desktop** by adding to `claude_desktop_config.json`:
+   ```json
+   {
+     "mcpServers": {
+       "source-code-summariser": {
+         "command": "node",
+         "args": ["/absolute/path/to/SourceCodeSummariser/mcp-server/dist/index.js"],
+         "env": {
+           "SUMMARISER_API_URL": "http://localhost:5000"
+         }
+       }
+     }
+   }
+   ```
+
+5. **Use it in Claude Desktop**:
+   - "Search for authentication logic in the codebase"
+   - "Find all public async methods"
+   - "Show me similar implementations"
+
+See [mcp-server/README.md](mcp-server/README.md) for complete MCP documentation.
 
 ## How It Works
 

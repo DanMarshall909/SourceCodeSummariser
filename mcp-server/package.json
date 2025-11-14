@@ -1,0 +1,29 @@
+{
+  "name": "source-code-summariser-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Source Code Summariser - enables AI coding bots to perform semantic code search",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "watch": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "code-search",
+    "semantic-search",
+    "ai",
+    "coding-bot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "axios": "^1.7.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
