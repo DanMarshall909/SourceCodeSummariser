@@ -37,33 +37,59 @@ public class ApiProgram
         ILlmProvider llmProvider;
         var providerName = settings.LlmProvider?.Provider?.ToLowerInvariant() ?? "openai";
 
+        // Determine API key: use LlmProvider.ApiKey if set, otherwise fall back to OpenAI.ApiKey for backward compatibility
+        var apiKey = !string.IsNullOrEmpty(settings.LlmProvider?.ApiKey)
+            ? settings.LlmProvider.ApiKey
+            : settings.OpenAI?.ApiKey ?? string.Empty;
+
+        // Determine model: use LlmProvider.Model if set, otherwise fall back to OpenAI.Model
+        var model = !string.IsNullOrEmpty(settings.LlmProvider?.Model)
+            ? settings.LlmProvider.Model
+            : settings.OpenAI?.Model ?? "gpt-3.5-turbo";
+
         switch (providerName)
         {
             case "openai":
-                if (string.IsNullOrEmpty(settings.LlmProvider?.OpenAI?.ApiKey))
+                if (string.IsNullOrEmpty(apiKey))
                 {
                     Console.WriteLine("Error: OpenAI API key not configured");
-                    Console.WriteLine("Set the OPENAI_API_KEY environment variable");
+                    Console.WriteLine("Set the OPENAI_API_KEY environment variable or LlmProvider:ApiKey in appsettings.json");
                     return;
                 }
-                llmProvider = new OpenAIProvider(settings.LlmProvider.OpenAI.ApiKey, settings.LlmProvider);
+
+                var openAiSettings = new OpenAISettings
+                {
+                    ApiKey = apiKey,
+                    Model = model,
+                    MaxTokens = settings.LlmProvider?.MaxTokens ?? 50,
+                    TimeoutSeconds = settings.LlmProvider?.TimeoutSeconds ?? 30
+                };
+
+                llmProvider = new OpenAIProvider(new HttpClient(), openAiSettings);
                 break;
 
             case "local":
-                llmProvider = new LocalProvider(settings.LlmProvider);
+                var endpoint = settings.LlmProvider?.LocalEndpoint ?? "http://localhost:11434";
+                llmProvider = new LocalProvider(endpoint, model);
                 break;
 
             case "langchain":
-                if (string.IsNullOrEmpty(settings.LlmProvider?.LangChain?.ApiKey))
+                if (string.IsNullOrEmpty(apiKey))
                 {
                     Console.WriteLine("Error: LangChain API key not configured");
+                    Console.WriteLine("Set the API key in LlmProvider:ApiKey");
                     return;
                 }
-                llmProvider = new LangChainProvider(
-                    settings.LlmProvider.LangChain.ApiKey,
-                    settings.LlmProvider.LangChain.ModelName,
-                    settings.LlmProvider
-                );
+
+                var langChainProvider = settings.LlmProvider?.LangChainProvider?.ToLowerInvariant() ?? "openai";
+                if (langChainProvider == "anthropic")
+                {
+                    llmProvider = new LangChainProvider(apiKey, model, useAnthropic: true);
+                }
+                else
+                {
+                    llmProvider = new LangChainProvider(apiKey, model);
+                }
                 break;
 
             default:
@@ -81,7 +107,7 @@ public class ApiProgram
         if (!File.Exists(dbPath))
         {
             Console.WriteLine("Warning: Database not found. Run the summarizer first to populate the database.");
-            Console.WriteLine("  dotnet run");
+            Console.WriteLine("  dotnet run <path-to-codebase>");
             Console.WriteLine();
         }
 

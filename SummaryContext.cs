@@ -7,7 +7,7 @@ namespace SourceCodeSummariser
     /// </summary>
     public class SummaryContext : DbContext
     {
-        private readonly string _connectionString;
+        private readonly string? _connectionString;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SummaryContext"/> class with default connection string.
@@ -23,6 +23,16 @@ namespace SourceCodeSummariser
         public SummaryContext(string connectionString)
         {
             _connectionString = connectionString;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SummaryContext"/> class with configured options.
+        /// Used for dependency injection scenarios.
+        /// </summary>
+        /// <param name="options">The options for this context.</param>
+        public SummaryContext(DbContextOptions<SummaryContext> options) : base(options)
+        {
+            // _connectionString is null when using DI, connection string is in options
         }
 
         /// <summary>
@@ -51,7 +61,11 @@ namespace SourceCodeSummariser
         /// <param name="optionsBuilder">The options builder for configuring the context.</param>
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseSqlite(_connectionString);
+            // Only configure if not already configured (i.e., not using DI)
+            if (!optionsBuilder.IsConfigured && _connectionString != null)
+            {
+                optionsBuilder.UseSqlite(_connectionString);
+            }
         }
 
         /// <summary>
