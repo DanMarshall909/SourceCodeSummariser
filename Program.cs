@@ -31,6 +31,20 @@ namespace SourceCodeSummariser
             var settings = new AppSettings();
             configuration.Bind(settings);
 
+            // Parse command-line arguments
+            if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
+            {
+                ShowHelp(logger);
+                return;
+            }
+
+            // Check for init command
+            if (args.Contains("--init") || args.Contains("init"))
+            {
+                await InitializeCommand(logger, settings);
+                return;
+            }
+
             // Validate configuration
             if (string.IsNullOrEmpty(settings.OpenAI.ApiKey))
             {
@@ -39,13 +53,6 @@ namespace SourceCodeSummariser
                 logger.WriteLine("  Linux/macOS:  export OpenAI__ApiKey=your-key-here");
                 logger.WriteLine("  Windows:      set OpenAI__ApiKey=your-key-here");
                 logger.WriteLine("\nYou can get an API key from: https://platform.openai.com/api-keys");
-                return;
-            }
-
-            // Parse command-line arguments
-            if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
-            {
-                ShowHelp(logger);
                 return;
             }
 
@@ -268,10 +275,92 @@ namespace SourceCodeSummariser
             return false;
         }
 
+        private static async Task InitializeCommand(ILogger logger, AppSettings settings)
+        {
+            logger.WriteLine("Initializing Source Code Summariser for existing codebase...\n");
+
+            bool hasErrors = false;
+
+            // Step 1: Check/Create appsettings.json
+            logger.WriteLine("[1/3] Configuration Setup");
+            string settingsPath = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
+            string examplePath = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.example.json");
+
+            if (File.Exists(settingsPath))
+            {
+                logger.WriteLine("  ✓ appsettings.json already exists");
+            }
+            else if (File.Exists(examplePath))
+            {
+                try
+                {
+                    File.Copy(examplePath, settingsPath);
+                    logger.WriteLine("  ✓ Created appsettings.json from appsettings.example.json");
+                }
+                catch (Exception ex)
+                {
+                    logger.WriteLine($"  ✗ Failed to create appsettings.json: {ex.Message}");
+                    hasErrors = true;
+                }
+            }
+            else
+            {
+                logger.WriteLine("  ✗ appsettings.example.json not found");
+                hasErrors = true;
+            }
+
+            // Step 2: Initialize database
+            logger.WriteLine("\n[2/3] Database Initialization");
+            try
+            {
+                var dbContext = new SummaryContext(settings.Database.ConnectionString);
+                await dbContext.Database.EnsureCreatedAsync();
+                logger.WriteLine($"  ✓ Database initialized at: {settings.Database.ConnectionString}");
+            }
+            catch (Exception ex)
+            {
+                logger.WriteLine($"  ✗ Failed to initialize database: {ex.Message}");
+                hasErrors = true;
+            }
+
+            // Step 3: Configuration guidance
+            logger.WriteLine("\n[3/3] Next Steps");
+            if (!hasErrors)
+            {
+                logger.WriteLine("  ✓ Initialization completed successfully!");
+                logger.WriteLine();
+                logger.WriteLine("NEXT STEPS:");
+                logger.WriteLine("  1. Set your API key as an environment variable:");
+                logger.WriteLine("     Linux/macOS:  export OpenAI__ApiKey=your-key-here");
+                logger.WriteLine("     Windows:      set OpenAI__ApiKey=your-key-here");
+                logger.WriteLine();
+                logger.WriteLine("  2. (Optional) Customize settings in appsettings.json");
+                logger.WriteLine("     - Choose LLM provider (OpenAI, LangChain, Local)");
+                logger.WriteLine("     - Configure model and token limits");
+                logger.WriteLine("     - Adjust excluded folders");
+                logger.WriteLine();
+                logger.WriteLine("  3. Process your codebase:");
+                logger.WriteLine("     dotnet run <path-to-your-code>");
+                logger.WriteLine();
+                logger.WriteLine("  4. Or start in watch mode:");
+                logger.WriteLine("     dotnet run <path-to-your-code> --watch");
+                logger.WriteLine();
+                logger.WriteLine("For more information, run: dotnet run --help");
+            }
+            else
+            {
+                logger.WriteLine("  ✗ Initialization completed with errors");
+                logger.WriteLine("  Please resolve the errors above and try again.");
+            }
+
+            logger.WriteLine();
+        }
+
         private static void ShowHelp(ILogger logger)
         {
             logger.WriteLine("USAGE:");
             logger.WriteLine("  SourceCodeSummariser <folder-path> [options]");
+            logger.WriteLine("  SourceCodeSummariser --init");
             logger.WriteLine("  SourceCodeSummariser api                      # Start HTTP API server for MCP");
             logger.WriteLine();
             logger.WriteLine("DESCRIPTION:");
@@ -285,6 +374,7 @@ namespace SourceCodeSummariser
             logger.WriteLine();
             logger.WriteLine("OPTIONS:");
             logger.WriteLine("  -h, --help       Show this help message");
+            logger.WriteLine("  --init           Initialize the tool for an existing codebase");
             logger.WriteLine("  -w, --watch      Enable watch mode (continuously monitor for file changes)");
             logger.WriteLine();
             logger.WriteLine("CONFIGURATION:");
@@ -292,12 +382,16 @@ namespace SourceCodeSummariser
             logger.WriteLine("    OpenAI__ApiKey=your-key-here");
             logger.WriteLine();
             logger.WriteLine("  Other settings can be customized in appsettings.json:");
-            logger.WriteLine("  - OpenAI:Model           Model to use (default: gpt-3.5-turbo)");
-            logger.WriteLine("  - OpenAI:MaxTokens       Max tokens per summary (default: 50)");
+            logger.WriteLine("  - LlmProvider:Provider       Provider type (OpenAI, LangChain, Local)");
+            logger.WriteLine("  - LlmProvider:Model          Model to use (default: gpt-3.5-turbo)");
+            logger.WriteLine("  - LlmProvider:MaxTokens      Max tokens per summary (default: 50)");
             logger.WriteLine("  - Database:ConnectionString  SQLite database path");
-            logger.WriteLine("  - Processing:ExcludedFolders  Folders to skip (default: bin, obj, .git)");
+            logger.WriteLine("  - Processing:ExcludedFolders Folders to skip (default: bin, obj, .git)");
             logger.WriteLine();
             logger.WriteLine("EXAMPLES:");
+            logger.WriteLine("  # Initialize for existing codebase");
+            logger.WriteLine("  SourceCodeSummariser --init");
+            logger.WriteLine();
             logger.WriteLine("  # One-time processing");
             logger.WriteLine("  SourceCodeSummariser ./MyProject");
             logger.WriteLine("  SourceCodeSummariser C:\\Projects\\MyApp\\src");

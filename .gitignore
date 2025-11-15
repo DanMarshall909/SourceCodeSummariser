@@ -398,3 +398,8 @@ SummariesOutput/
 # Project-specific
 summaries.db
 appsettings.json
+
+# VSCode Extension
+vscode-extension/out/
+vscode-extension/*.vsix
+vscode-extension/.vscode-test/
