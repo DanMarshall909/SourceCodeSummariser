@@ -6,6 +6,11 @@ namespace SourceCodeSummariser
     public class AppSettings
     {
         /// <summary>
+        /// Gets or sets the target directory containing the codebase to analyze.
+        /// </summary>
+        public string TargetDirectory { get; set; } = string.Empty;
+
+        /// <summary>
         /// Gets or sets the LLM provider configuration settings.
         /// </summary>
         public LlmProviderSettings LlmProvider { get; set; } = new();

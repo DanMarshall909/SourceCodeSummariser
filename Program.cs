@@ -6,6 +6,13 @@ namespace SourceCodeSummariser
     {
         private static async Task Main(string[] args)
         {
+            // Check if running in API mode
+            if (args.Length > 0 && args[0].Equals("api", StringComparison.OrdinalIgnoreCase))
+            {
+                await ApiProgram.Main(args.Skip(1).ToArray());
+                return;
+            }
+
             var logger = new ConsoleLogger();
 
             // Display banner
@@ -354,6 +361,7 @@ namespace SourceCodeSummariser
             logger.WriteLine("USAGE:");
             logger.WriteLine("  SourceCodeSummariser <folder-path> [options]");
             logger.WriteLine("  SourceCodeSummariser --init");
+            logger.WriteLine("  SourceCodeSummariser api                      # Start HTTP API server for MCP");
             logger.WriteLine();
             logger.WriteLine("DESCRIPTION:");
             logger.WriteLine("  Analyzes C# source code files in the specified folder and generates");
@@ -362,6 +370,7 @@ namespace SourceCodeSummariser
             logger.WriteLine();
             logger.WriteLine("ARGUMENTS:");
             logger.WriteLine("  <folder-path>    Path to the folder containing C# source code");
+            logger.WriteLine("  api              Start HTTP API server for MCP integration");
             logger.WriteLine();
             logger.WriteLine("OPTIONS:");
             logger.WriteLine("  -h, --help       Show this help message");
@@ -390,6 +399,9 @@ namespace SourceCodeSummariser
             logger.WriteLine("  # Watch mode (continuously monitor for changes)");
             logger.WriteLine("  SourceCodeSummariser ./MyProject --watch");
             logger.WriteLine("  SourceCodeSummariser ./MyProject -w");
+            logger.WriteLine();
+            logger.WriteLine("  # API server mode (for MCP integration with AI coding bots)");
+            logger.WriteLine("  SourceCodeSummariser api");
             logger.WriteLine();
         }
     }
