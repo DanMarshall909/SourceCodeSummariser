@@ -2,15 +2,49 @@
 
 An AI-powered C# code documentation tool that automatically generates intelligent summaries of your codebase using OpenAI's GPT models. Track changes over time and maintain up-to-date documentation effortlessly.
 
+## ✨ New: Spectre.Console CLI
+
+The tool now features a **high-quality CLI built with Spectre.Console** that provides an intuitive command-line interface for all features. The CLI uses a client-server architecture where the analyzer runs as a service and commands invoke features via HTTP.
+
+**Quick CLI Usage:**
+```bash
+# Initialize
+analyze init
+
+# Process code
+analyze process /path/to/code
+
+# Start analyzer service
+analyze serve
+
+# Search your codebase
+analyze search "authentication logic"
+
+# Get member details
+analyze member 123
+
+# View statistics
+analyze stats
+```
+
+📖 **[Read the complete CLI Guide](CLI_GUIDE.md)** for detailed documentation.
+
 ## Features
 
-- **Easy Initialization**: Quick setup for existing codebases with `--init` command
+- **🎨 Beautiful CLI**: Modern command-line interface built with Spectre.Console
+- **🔍 Semantic Search**: AI-powered semantic code search with embeddings
+- **🚀 Service Architecture**: Analyzer runs as a service, CLI invokes features via HTTP
+- **🛠️ Tool-Friendly**: Designed for use by humans and automation tools
+- **Easy Initialization**: Quick setup for existing codebases with `init` command
 - **AI-Powered Summaries**: Uses OpenAI's GPT models to generate concise, accurate summaries of your code
 - **Multi-Provider Support**: Works with OpenAI, Anthropic (via LangChain), or Local LLMs (Ollama)
 - **Watch Mode**: Continuously monitors your codebase for changes and updates summaries in real-time
 - **Change Tracking**: Stores summaries in a SQLite database and tracks changes over time
 - **Comprehensive Analysis**: Analyzes classes, methods, properties, fields, interfaces, structs, and namespaces
-- **Tag System**: Normalized tag system for efficient categorization
+- **Tag System**: Normalized tag system for efficient categorization and filtering
+- **HTTP API**: RESTful API for integration with other tools
+- **MCP Integration**: Model Context Protocol server for AI assistants
+- **VSCode Extension**: Native VSCode integration
 - **Configurable**: Flexible configuration via JSON file or environment variables
 - **Error Handling**: Robust error handling with detailed logging
 - **Fast & Async**: Fully asynchronous processing for optimal performance

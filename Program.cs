@@ -1,408 +1,82 @@
-﻿using Microsoft.Extensions.Configuration;
+using Spectre.Console.Cli;
+using SourceCodeSummariser.CLI.Commands;
 
-namespace SourceCodeSummariser
+namespace SourceCodeSummariser;
+
+/// <summary>
+/// Main entry point for the SourceCode Analyzer CLI
+/// </summary>
+internal class Program
 {
-    internal class Program
+    private static async Task<int> Main(string[] args)
     {
-        private static async Task Main(string[] args)
+        var app = new CommandApp();
+
+        app.Configure(config =>
         {
-            // Check if running in API mode
-            if (args.Length > 0 && args[0].Equals("api", StringComparison.OrdinalIgnoreCase))
-            {
-                await ApiProgram.Main(args.Skip(1).ToArray());
-                return;
-            }
+            config.SetApplicationName("analyze");
 
-            var logger = new ConsoleLogger();
+            config.AddCommand<InitCommand>("init")
+                .WithDescription("Initialize the analyzer (create config and database)")
+                .WithExample(new[] { "init" })
+                .WithExample(new[] { "init", "--directory", "/path/to/code" });
 
-            // Display banner
-            logger.WriteLine("===========================================");
-            logger.WriteLine("  Source Code Summariser");
-            logger.WriteLine("  AI-powered C# code documentation tool");
-            logger.WriteLine("===========================================\n");
+            config.AddCommand<ServeCommand>("serve")
+                .WithDescription("Start the analyzer service")
+                .WithExample(new[] { "serve" })
+                .WithExample(new[] { "serve", "--port", "5000" });
 
-            // Load configuration
-            var configuration = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-                .AddEnvironmentVariables()
-                .Build();
+            config.AddCommand<ProcessCommand>("process")
+                .WithDescription("Process/analyze code files or directories")
+                .WithExample(new[] { "process", "/path/to/code" })
+                .WithExample(new[] { "process", "MyFile.cs" })
+                .WithExample(new[] { "process", "/path/to/code", "--watch" })
+                .WithExample(new[] { "process", "MyFile.cs", "--remote" });
 
-            var settings = new AppSettings();
-            configuration.Bind(settings);
+            config.AddCommand<SearchCommand>("search")
+                .WithDescription("Perform semantic code search")
+                .WithExample(new[] { "search", "\"authentication logic\"" })
+                .WithExample(new[] { "search", "\"error handling\"", "--top", "5" })
+                .WithExample(new[] { "search", "\"async methods\"", "--tags", "public,async" })
+                .WithExample(new[] { "search", "--similar-to", "123" })
+                .WithExample(new[] { "search", "\"database queries\"", "--format", "json" });
 
-            // Parse command-line arguments
-            if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
-            {
-                ShowHelp(logger);
-                return;
-            }
+            config.AddCommand<MemberCommand>("member")
+                .WithDescription("Get details about a specific code member")
+                .WithExample(new[] { "member", "123" })
+                .WithExample(new[] { "member", "456", "--format", "json" });
 
-            // Check for init command
-            if (args.Contains("--init") || args.Contains("init"))
-            {
-                await InitializeCommand(logger, settings);
-                return;
-            }
+            config.AddCommand<TagsCommand>("tags")
+                .WithDescription("List all tags and their usage")
+                .WithExample(new[] { "tags" })
+                .WithExample(new[] { "tags", "--category", "visibility" })
+                .WithExample(new[] { "tags", "--min-count", "10" })
+                .WithExample(new[] { "tags", "--format", "list" });
 
-            // Validate configuration
-            if (string.IsNullOrEmpty(settings.OpenAI.ApiKey))
-            {
-                logger.WriteLine("ERROR: OpenAI API key not configured.");
-                logger.WriteLine("\nPlease set your API key as an environment variable:");
-                logger.WriteLine("  Linux/macOS:  export OpenAI__ApiKey=your-key-here");
-                logger.WriteLine("  Windows:      set OpenAI__ApiKey=your-key-here");
-                logger.WriteLine("\nYou can get an API key from: https://platform.openai.com/api-keys");
-                return;
-            }
+            config.AddCommand<FilesCommand>("files")
+                .WithDescription("Get file summary and information")
+                .WithExample(new[] { "files", "Program.cs" })
+                .WithExample(new[] { "files", "/path/to/MyClass.cs", "--format", "markdown" });
 
-            // Check for watch mode flag
-            bool watchMode = args.Contains("--watch") || args.Contains("-w");
-            string folderPath = args.FirstOrDefault(arg => !arg.StartsWith("-")) ?? string.Empty;
+            config.AddCommand<StatsCommand>("stats")
+                .WithDescription("Show database statistics")
+                .WithExample(new[] { "stats" })
+                .WithExample(new[] { "stats", "--database", "/path/to/summaries.db" })
+                .WithExample(new[] { "stats", "--format", "json" });
 
-            if (string.IsNullOrEmpty(folderPath))
-            {
-                logger.WriteLine("ERROR: No folder path specified.");
-                ShowHelp(logger);
-                return;
-            }
+            // Validation and error handling
+            config.PropagateExceptions();
+            config.ValidateExamples();
+        });
 
-            if (!Directory.Exists(folderPath))
-            {
-                logger.WriteLine($"ERROR: The specified folder does not exist: {folderPath}");
-                return;
-            }
-
-            // Create LLM provider based on configuration
-            ILlmProvider llmProvider;
-            try
-            {
-                llmProvider = CreateLlmProvider(settings, logger);
-            }
-            catch (Exception ex)
-            {
-                logger.WriteLine($"ERROR: Failed to initialize LLM provider: {ex.Message}");
-                return;
-            }
-
-            logger.WriteLine($"Processing folder: {folderPath}");
-            logger.WriteLine($"Using provider: {llmProvider.ProviderName}");
-            logger.WriteLine($"Database: {settings.Database.ConnectionString}");
-            logger.WriteLine($"Mode: {(watchMode ? "Watch (continuous monitoring)" : "One-time processing")}\n");
-
-            try
-            {
-                var dbContext = new SummaryContext(settings.Database.ConnectionString);
-                var summarizerService = new SummarizerService(llmProvider, settings.LlmProvider.MaxTokens);
-                var fileProcessorService = new FileProcessorService(dbContext, summarizerService, llmProvider, settings.LlmProvider);
-
-                if (watchMode)
-                {
-                    // Run initial scan before starting watch mode
-                    logger.WriteLine("Running initial scan...\n");
-                    await ProcessAllFilesOnce(folderPath, settings, fileProcessorService, logger);
-
-                    // Start file watching
-                    using var fileWatcher = new FileWatcherService(folderPath, fileProcessorService, settings, logger);
-                    fileWatcher.Start();
-
-                    // Keep the application running until Ctrl+C is pressed
-                    var cancellationTokenSource = new CancellationTokenSource();
-                    Console.CancelKeyPress += (sender, eventArgs) =>
-                    {
-                        eventArgs.Cancel = true;
-                        cancellationTokenSource.Cancel();
-                        logger.WriteLine("\n\nStopping file watcher...");
-                    };
-
-                    // Wait indefinitely until cancellation is requested
-                    await Task.Delay(Timeout.Infinite, cancellationTokenSource.Token);
-                }
-                else
-                {
-                    // One-time processing mode
-                    await ProcessAllFilesOnce(folderPath, settings, fileProcessorService, logger);
-                    logger.WriteLine("✓ Processing completed. Summaries saved to the database.");
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Normal shutdown via Ctrl+C
-                logger.WriteLine("✓ File watcher stopped successfully.");
-            }
-            catch (Exception ex)
-            {
-                logger.WriteLine($"\nFATAL ERROR: {ex.Message}");
-                logger.WriteLine($"Stack trace: {ex.StackTrace}");
-                Environment.Exit(1);
-            }
+        try
+        {
+            return await app.RunAsync(args);
         }
-
-        private static async Task ProcessAllFilesOnce(string folderPath, AppSettings settings, FileProcessorService fileProcessorService, ILogger logger)
+        catch (Exception ex)
         {
-            var changedFiles = new Dictionary<string, List<(string MethodSignature, string OldSummary, string NewSummary)>>();
-            var processedFiles = 0;
-            var skippedFiles = 0;
-
-            var files = Directory.EnumerateFiles(folderPath, settings.Processing.FilePattern, SearchOption.AllDirectories).ToList();
-            logger.WriteLine($"Found {files.Count} C# files to process.\n");
-
-            foreach (var file in files)
-            {
-                if (IsInExcludedFolder(file, folderPath, settings.Processing.ExcludedFolders))
-                {
-                    logger.WriteLine($"  [SKIP] {Path.GetFileName(file)} (excluded folder)");
-                    skippedFiles++;
-                    continue;
-                }
-
-                try
-                {
-                    logger.Write($"  [PROCESSING] {Path.GetFileName(file)}... ");
-                    var changes = await fileProcessorService.ProcessFile(file);
-                    if (changes.Any())
-                    {
-                        changedFiles[file] = changes;
-                        logger.WriteLine($"✓ ({changes.Count} changes detected)");
-                    }
-                    else
-                    {
-                        logger.WriteLine("✓ (no changes)");
-                    }
-                    processedFiles++;
-                }
-                catch (Exception ex)
-                {
-                    logger.WriteLine($"✗ ERROR: {ex.Message}");
-                    skippedFiles++;
-                }
-            }
-
-            logger.WriteLine($"\n===========================================");
-            logger.WriteLine($"Processing Summary:");
-            logger.WriteLine($"  Total files found: {files.Count}");
-            logger.WriteLine($"  Successfully processed: {processedFiles}");
-            logger.WriteLine($"  Skipped/Failed: {skippedFiles}");
-            logger.WriteLine($"  Files with changes: {changedFiles.Count}");
-            logger.WriteLine($"===========================================\n");
-
-            // Display changed methods grouped by file
-            if (changedFiles.Any())
-            {
-                logger.WriteLine("CHANGES DETECTED:\n");
-                foreach (var (file, changes) in changedFiles)
-                {
-                    logger.WriteLine($"File: {file}");
-                    foreach (var (methodSignature, oldSummary, newSummary) in changes)
-                    {
-                        logger.WriteLine($"\n  ### {methodSignature}");
-                        if (!string.IsNullOrEmpty(oldSummary))
-                        {
-                            logger.WriteLine($"      Old: {oldSummary}");
-                        }
-                        logger.WriteLine($"      New: {newSummary}");
-                    }
-                    logger.WriteLine();
-                }
-            }
-        }
-
-        private static ILlmProvider CreateLlmProvider(AppSettings settings, ILogger logger)
-        {
-            // Determine API key: use LlmProvider.ApiKey if set, otherwise fall back to OpenAI.ApiKey for backward compatibility
-            var apiKey = !string.IsNullOrEmpty(settings.LlmProvider.ApiKey)
-                ? settings.LlmProvider.ApiKey
-                : settings.OpenAI.ApiKey;
-
-            // Determine model: use LlmProvider.Model if set, otherwise fall back to OpenAI.Model
-            var model = !string.IsNullOrEmpty(settings.LlmProvider.Model)
-                ? settings.LlmProvider.Model
-                : settings.OpenAI.Model;
-
-            var provider = settings.LlmProvider.Provider.ToLower();
-
-            logger.WriteLine($"Initializing {provider} provider with model: {model}");
-
-            return provider switch
-            {
-                "openai" => new OpenAIProvider(new HttpClient(), new OpenAISettings
-                {
-                    ApiKey = apiKey,
-                    Model = model,
-                    MaxTokens = settings.LlmProvider.MaxTokens,
-                    TimeoutSeconds = settings.LlmProvider.TimeoutSeconds
-                }),
-
-                "langchain" => CreateLangChainProvider(settings.LlmProvider, apiKey, model),
-
-                "local" => new LocalProvider(
-                    settings.LlmProvider.LocalEndpoint,
-                    model),
-
-                _ => throw new InvalidOperationException(
-                    $"Unknown provider: {provider}. Supported providers: OpenAI, LangChain, Local")
-            };
-        }
-
-        private static ILlmProvider CreateLangChainProvider(LlmProviderSettings settings, string apiKey, string model)
-        {
-            var subProvider = settings.LangChainProvider.ToLower();
-
-            return subProvider switch
-            {
-                "openai" => new LangChainProvider(apiKey, model),
-                "anthropic" => new LangChainProvider(apiKey, model, useAnthropic: true),
-                _ => throw new InvalidOperationException(
-                    $"Unknown LangChain provider: {subProvider}. Supported: OpenAI, Anthropic")
-            };
-        }
-
-        private static bool IsInExcludedFolder(string filePath, string rootPath, List<string> excludedFolders)
-        {
-            // Normalize paths for consistent comparison
-            string normalizedPath = Path.GetFullPath(filePath).ToLower();
-            string normalizedRootPath = Path.GetFullPath(rootPath).ToLower();
-
-            foreach (var excludedFolder in excludedFolders)
-            {
-                string excludedPath = Path.Combine(normalizedRootPath, excludedFolder).ToLower();
-                if (normalizedPath.Contains(excludedPath))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static async Task InitializeCommand(ILogger logger, AppSettings settings)
-        {
-            logger.WriteLine("Initializing Source Code Summariser for existing codebase...\n");
-
-            bool hasErrors = false;
-
-            // Step 1: Check/Create appsettings.json
-            logger.WriteLine("[1/3] Configuration Setup");
-            string settingsPath = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
-            string examplePath = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.example.json");
-
-            if (File.Exists(settingsPath))
-            {
-                logger.WriteLine("  ✓ appsettings.json already exists");
-            }
-            else if (File.Exists(examplePath))
-            {
-                try
-                {
-                    File.Copy(examplePath, settingsPath);
-                    logger.WriteLine("  ✓ Created appsettings.json from appsettings.example.json");
-                }
-                catch (Exception ex)
-                {
-                    logger.WriteLine($"  ✗ Failed to create appsettings.json: {ex.Message}");
-                    hasErrors = true;
-                }
-            }
-            else
-            {
-                logger.WriteLine("  ✗ appsettings.example.json not found");
-                hasErrors = true;
-            }
-
-            // Step 2: Initialize database
-            logger.WriteLine("\n[2/3] Database Initialization");
-            try
-            {
-                var dbContext = new SummaryContext(settings.Database.ConnectionString);
-                await dbContext.Database.EnsureCreatedAsync();
-                logger.WriteLine($"  ✓ Database initialized at: {settings.Database.ConnectionString}");
-            }
-            catch (Exception ex)
-            {
-                logger.WriteLine($"  ✗ Failed to initialize database: {ex.Message}");
-                hasErrors = true;
-            }
-
-            // Step 3: Configuration guidance
-            logger.WriteLine("\n[3/3] Next Steps");
-            if (!hasErrors)
-            {
-                logger.WriteLine("  ✓ Initialization completed successfully!");
-                logger.WriteLine();
-                logger.WriteLine("NEXT STEPS:");
-                logger.WriteLine("  1. Set your API key as an environment variable:");
-                logger.WriteLine("     Linux/macOS:  export OpenAI__ApiKey=your-key-here");
-                logger.WriteLine("     Windows:      set OpenAI__ApiKey=your-key-here");
-                logger.WriteLine();
-                logger.WriteLine("  2. (Optional) Customize settings in appsettings.json");
-                logger.WriteLine("     - Choose LLM provider (OpenAI, LangChain, Local)");
-                logger.WriteLine("     - Configure model and token limits");
-                logger.WriteLine("     - Adjust excluded folders");
-                logger.WriteLine();
-                logger.WriteLine("  3. Process your codebase:");
-                logger.WriteLine("     dotnet run <path-to-your-code>");
-                logger.WriteLine();
-                logger.WriteLine("  4. Or start in watch mode:");
-                logger.WriteLine("     dotnet run <path-to-your-code> --watch");
-                logger.WriteLine();
-                logger.WriteLine("For more information, run: dotnet run --help");
-            }
-            else
-            {
-                logger.WriteLine("  ✗ Initialization completed with errors");
-                logger.WriteLine("  Please resolve the errors above and try again.");
-            }
-
-            logger.WriteLine();
-        }
-
-        private static void ShowHelp(ILogger logger)
-        {
-            logger.WriteLine("USAGE:");
-            logger.WriteLine("  SourceCodeSummariser <folder-path> [options]");
-            logger.WriteLine("  SourceCodeSummariser --init");
-            logger.WriteLine("  SourceCodeSummariser api                      # Start HTTP API server for MCP");
-            logger.WriteLine();
-            logger.WriteLine("DESCRIPTION:");
-            logger.WriteLine("  Analyzes C# source code files in the specified folder and generates");
-            logger.WriteLine("  AI-powered summaries using OpenAI's GPT models. Summaries are stored");
-            logger.WriteLine("  in a SQLite database and changes are tracked over time.");
-            logger.WriteLine();
-            logger.WriteLine("ARGUMENTS:");
-            logger.WriteLine("  <folder-path>    Path to the folder containing C# source code");
-            logger.WriteLine("  api              Start HTTP API server for MCP integration");
-            logger.WriteLine();
-            logger.WriteLine("OPTIONS:");
-            logger.WriteLine("  -h, --help       Show this help message");
-            logger.WriteLine("  --init           Initialize the tool for an existing codebase");
-            logger.WriteLine("  -w, --watch      Enable watch mode (continuously monitor for file changes)");
-            logger.WriteLine();
-            logger.WriteLine("CONFIGURATION:");
-            logger.WriteLine("  API Key (required) - Set via environment variable:");
-            logger.WriteLine("    OpenAI__ApiKey=your-key-here");
-            logger.WriteLine();
-            logger.WriteLine("  Other settings can be customized in appsettings.json:");
-            logger.WriteLine("  - LlmProvider:Provider       Provider type (OpenAI, LangChain, Local)");
-            logger.WriteLine("  - LlmProvider:Model          Model to use (default: gpt-3.5-turbo)");
-            logger.WriteLine("  - LlmProvider:MaxTokens      Max tokens per summary (default: 50)");
-            logger.WriteLine("  - Database:ConnectionString  SQLite database path");
-            logger.WriteLine("  - Processing:ExcludedFolders Folders to skip (default: bin, obj, .git)");
-            logger.WriteLine();
-            logger.WriteLine("EXAMPLES:");
-            logger.WriteLine("  # Initialize for existing codebase");
-            logger.WriteLine("  SourceCodeSummariser --init");
-            logger.WriteLine();
-            logger.WriteLine("  # One-time processing");
-            logger.WriteLine("  SourceCodeSummariser ./MyProject");
-            logger.WriteLine("  SourceCodeSummariser C:\\Projects\\MyApp\\src");
-            logger.WriteLine();
-            logger.WriteLine("  # Watch mode (continuously monitor for changes)");
-            logger.WriteLine("  SourceCodeSummariser ./MyProject --watch");
-            logger.WriteLine("  SourceCodeSummariser ./MyProject -w");
-            logger.WriteLine();
-            logger.WriteLine("  # API server mode (for MCP integration with AI coding bots)");
-            logger.WriteLine("  SourceCodeSummariser api");
-            logger.WriteLine();
+            Spectre.Console.AnsiConsole.WriteException(ex, Spectre.Console.ExceptionFormats.ShortenEverything);
+            return 1;
         }
     }
 }
