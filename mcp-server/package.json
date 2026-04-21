@@ -22,8 +22,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "axios": "^1.7.9"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "axios": "^1.15.1"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
